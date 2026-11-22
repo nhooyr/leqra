@@ -2928,6 +2928,8 @@
     if (session.room) clearRoomResume()
     session.failed = true
     session.joined = false
+    session.serverVersion = ""
+    art.connectionChanged?.()
     session.latency = session.pendingPing = null
     resetControls()
     art.renderLoadout(null, 1)
@@ -2972,6 +2974,8 @@
     const old = socket
     socket = null
     world.joined = false
+    world.serverVersion = ""
+    art.connectionChanged?.()
     world.latency = world.pendingPing = null
     resetControls()
     old?.close()
@@ -3158,6 +3162,8 @@
         return
       }
       session.welcomed = true
+      session.serverVersion = typeof message.version === "string" ? message.version : ""
+      art.connectionChanged?.()
       session.shotAudioEpoch = {}
       if (message.publicToken) {
         art.rememberPublicIdentity?.(message.publicToken, session.publicToken || "")
@@ -3416,6 +3422,7 @@
     })
     ws.addEventListener("message", (event) => receive(ws, event))
     ws.addEventListener("close", () => {
+      if (ws === socket) art.connectionChanged?.()
       if (ws === socket && session === world && !world.failed && !world.result) {
         retryConnection((world.joined ? "Disconnected from " : "Could not join ") + arenaName(world) + ".")
       }
@@ -3514,6 +3521,7 @@
     }
     socket = null
     session = null
+    art.connectionChanged?.()
     art.renderLoadout(null, 1)
     art.renderLoadout(null, 2)
     dismissPause()
@@ -4149,6 +4157,11 @@
     }
   }
   window.leqraInfinity = Object.freeze({
+    get serverVersion() {
+      return session?.online && session.welcomed && socket?.readyState === WebSocket.OPEN
+        ? session.serverVersion || ""
+        : ""
+    },
     start,
     close: stop,
     resetControls,

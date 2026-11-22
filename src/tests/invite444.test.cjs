@@ -54,6 +54,7 @@ function boot({ query = "?room=Friday+tanks", session = null, name = "SAVED PILO
     return nodes.get(id)
   }
   const s = {
+    updateSettingsVersion() {},
     $,
     URL,
     URLSearchParams,

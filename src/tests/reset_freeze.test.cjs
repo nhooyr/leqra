@@ -31,6 +31,7 @@ function boot() {
     sessionStorage = new Storage(),
     calls = { close: 0, infinity: 0, preview: 0, input: 0, audio: 0, suspend: 0, frames: 0, sent: [] }
   const s = {
+    updateSettingsVersion() {},
     Storage,
     localStorage,
     sessionStorage,

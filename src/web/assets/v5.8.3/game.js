@@ -20,7 +20,7 @@
       "This browser cannot create a 2D canvas. Please open the game in another browser."
     return
   }
-  const GAME_VERSION = "v5.8.2"
+  const GAME_VERSION = "v5.8.3"
   const GAME_PROTOCOL = 1
   const TAU = Math.PI * 2,
     CELL = 84,
@@ -9169,6 +9169,7 @@
     clearTimeout(online.retryTimer)
     cancelCallsignSave()
     online.connecting = online.connected = false
+    updateSettingsVersion()
     online.code = online.token = ""
     online.id = -1
     online.roomData = null
@@ -9456,6 +9457,7 @@
     }
     online.manual = false
     online.connecting = true
+    online.serverVersion = ""
     netBusy(true)
     if (!reconnecting)
       setNetStatus(request.type === "create" ? "Creating the room…" : "Joining or creating the room…")
@@ -9491,6 +9493,7 @@
       online.publishing = false
       online.socket = null
       online.connected = online.connecting = false
+      updateSettingsVersion()
       online.serverVersion = serverVersion
       online.code = ""
       online.id = -1
@@ -9608,6 +9611,7 @@
           clearTimeout(timeout)
           online.connecting = false
           online.connected = true
+          updateSettingsVersion()
           online.pingMeasured = false
           online.code = msg.room
           online.id = msg.id
@@ -9936,6 +9940,7 @@
           cancelCallsignSave()
           online.manual = true
           online.connected = false
+          updateSettingsVersion()
           online.connecting = false
           online.code = ""
           online.id = -1
@@ -9960,6 +9965,7 @@
       clearTimeout(timeout)
       if (online.socket !== ws) return
       online.connected = false
+      updateSettingsVersion()
       online.publicInfinityPending?.cancel?.()
       online.connecting = false
       rolePending = false
@@ -10085,6 +10091,7 @@
     online.socket = null
     if (ws && ws.readyState < 2) ws.close(1000, "Left room")
     online.connected = online.connecting = false
+    updateSettingsVersion()
     online.publishing = false
     online.code = online.token = ""
     online.id = -1
@@ -11937,6 +11944,7 @@
     online.socket = null
     if (ws && ws.readyState < 2) ws.close(1000, "Room taken offline")
     online.connected = online.connecting = false
+    updateSettingsVersion()
     online.publishing = false
     online.code = online.token = ""
     online.id = -1
@@ -13480,6 +13488,7 @@
     if (kind === "rules") fillRulesForm()
     if (kind === "presets") renderPresets()
     if (kind === "controls") {
+      updateSettingsVersion()
       if (!d.open) $("controlsBinds").open = false
       renderBindings()
     }
@@ -19366,6 +19375,16 @@
     frameStats.worst = 0
     frameStats.at = now
   }
+  function settingsVersionText() {
+    const server = window.leqraInfinity?.serverVersion || (online.connected ? online.serverVersion : "")
+    return "leqra " + GAME_VERSION + (server ? " (server " + server + ")" : "")
+  }
+  function updateSettingsVersion() {
+    const label = $("settingsVersion")
+    if (!label) return
+    const value = settingsVersionText()
+    if (label.textContent !== value) label.textContent = value
+  }
   function initFrameSettings() {
     const indicators = [
       ["fpsIndicator", wrap],
@@ -19378,10 +19397,13 @@
       )
     $("resetAllSettingsBtn").insertAdjacentHTML(
       "beforebegin",
-      '<hr><h3>PERFORMANCE</h3><label class="check-label"><input id="showFPS" type="checkbox"> FPS and ping time</label><label class="check-label"><input id="performanceMode" type="checkbox"> Performance graphics (lower pixel density, reduced glow)</label><p class="mode-help">FPS measures browser rendering. Ping measures the round-trip time to the game server, from the start menu through online play. It refreshes every second. Graphics quality never changes tank speed, physics, hitboxes, or game rules.</p><hr><p class="mode-help game-version">leqra ' +
-        GAME_VERSION +
-        "</p>",
+      '<hr><h3>PERFORMANCE</h3><label class="check-label"><input id="showFPS" type="checkbox"> FPS and ping time</label><label class="check-label"><input id="performanceMode" type="checkbox"> Performance graphics (lower pixel density, reduced glow)</label><p class="mode-help">FPS measures browser rendering. Ping measures the round-trip time to the game server, from the start menu through online play. It refreshes every second. Graphics quality never changes tank speed, physics, hitboxes, or game rules.</p>',
     )
+    $("resetAllSettingsBtn").insertAdjacentHTML(
+      "afterend",
+      '<p id="settingsVersion" class="mode-help game-version"></p>',
+    )
+    updateSettingsVersion()
     const refresh = () => {
       for (const [id] of indicators) $(id).hidden = !combatPrefs.fps
       resetFrameSample()
@@ -20048,6 +20070,7 @@
     gamepadDialogBlocked,
     mergeGamepad: window.leqraGamepads.merge,
     clearGamepads: () => gamepads.clear(),
+    connectionChanged: updateSettingsVersion,
     toggleFullscreen,
     sampleFrame: (now, work, latency = null) => sampleFrame(now, work, "infiniteFPSIndicator", latency),
     ensureSelectedCallsignAccounts,
@@ -20217,6 +20240,7 @@
       const socket = online.socket
       online.socket = null
       online.connected = online.connecting = false
+      updateSettingsVersion()
       online.restoreInfinity = false
       try {
         if (socket?.readyState === 1) socket.send(JSON.stringify({ type: "leave", room: online.code }))

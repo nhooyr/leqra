@@ -100,6 +100,7 @@ class MainActivity : Activity() {
     private var pendingRoomInvite: RoomJoinRequest? = null
     private var readySignature = ""
     private var settingsOpen = false
+    private var settingsVersionLabel: TextView? = null
     private var playersOpen = false
     private var showScores = false
     private var foreground = false
@@ -462,6 +463,10 @@ class MainActivity : Activity() {
 
     private fun refresh(structural: Boolean) {
         if (!::root.isInitialized) return
+        settingsVersionLabel?.let {
+            val version = session.settingsVersionText
+            if (it.text.toString() != version) it.text = version
+        }
         if (
             session.network.connected &&
                 pendingRoomInvite?.let { session.network.hasRoomReservation(it.code) } == true
@@ -1976,9 +1981,13 @@ class MainActivity : Activity() {
             },
         )
         onlineServerSetting(panel)
-        panel.add(label(this, "App version ${BuildConfig.VERSION_NAME}", 11f, muted, mono = true))
         panel.add(button(this, "RESET ALL SETTINGS", { confirmResetSettings() }, role = "danger"))
         panel.add(button(this, "BACK", ::dismissDialog, role = "primary"), gap = 0)
+        val versionLabel =
+            label(this, session.settingsVersionText, 11f, muted, mono = true).apply {
+                tag = "settingsVersion"
+            }
+        panel.add(versionLabel)
         panel.isFocusableInTouchMode = true
         panel.requestFocus()
         showPanel(
@@ -1987,6 +1996,7 @@ class MainActivity : Activity() {
             afterClose = if (returnToPause) ::showMenu else null,
             header = panelHeader("Controls"),
         )
+        settingsVersionLabel = versionLabel
     }
 
     private fun onlineServerSetting(panel: LinearLayout) {
@@ -3781,6 +3791,7 @@ class MainActivity : Activity() {
     ) {
         val openingScreen = session.screen
         focusSuspendedPlay = false
+        settingsVersionLabel = null
         dialog?.dismiss()
         clearHeldControls()
         if (session.screen == Screen.PLAYING) session.pause(true) else session.neutral()
@@ -3810,6 +3821,7 @@ class MainActivity : Activity() {
                     shown.setOnDismissListener {
                         if (dialog !== shown) return@setOnDismissListener
                         dialog = null
+                        settingsVersionLabel = null
                         queueDialog = false
                         if (isFinishing || isDestroyed) return@setOnDismissListener
                         if (afterClose != null && session.screen == openingScreen) {

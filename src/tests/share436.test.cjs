@@ -54,6 +54,7 @@ function boot({ spectating = false, p2 = true } = {}) {
   ]
   const rules = { mode: "survival", mapSize: "huge", teamMode: "teams", scoreTarget: 15 }
   const s = {
+    updateSettingsVersion() {},
     URL,
     Map,
     Set,

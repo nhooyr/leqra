@@ -365,9 +365,6 @@ struct NativePreferencesPanel: View {
             TextField("https://leqra.com", text: $session.serverAddress).modifier(WebField()).keyboardType(
                 .URL
             ).textInputAutocapitalization(.never).autocorrectionDisabled()
-            Text("Release \(NetworkClient.supportedVersion), protocol \(NetworkClient.protocolVersion)").font(
-                WebStyle.mono()
-            ).foregroundStyle(WebStyle.muted)
             Button("RESET ALL SETTINGS") { confirmReset = true }.buttonStyle(WebButtonStyle(kind: .danger))
                 .accessibilityIdentifier("resetAllSettings")
         }.font(.system(size: 13)).tint(WebStyle.accent)
@@ -706,6 +703,8 @@ struct ControlsPanel: View {
                     NativePreferencesPanel(session: session)
                     Button("BACK") { session.showControls = false }.buttonStyle(
                         WebButtonStyle(kind: .primary))
+                    Text(session.settingsVersionText).font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
+                        .accessibilityIdentifier("settingsVersion")
                 }
             }
             .opacity(session.showAccount ? 0 : 1)

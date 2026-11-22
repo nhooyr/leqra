@@ -267,8 +267,38 @@ final class GameUITests: XCTestCase {
                 toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
                 XCTAssertNotEqual(toggle.value as? String, previous)
             }
+            let version = app.staticTexts["settingsVersion"]
+            reveal(version, in: app)
+            XCTAssertTrue(app.scrollViews["modalScroll"].frame.contains(version.frame))
+            XCTAssertTrue(version.label.hasPrefix("leqra v"))
+            XCTAssertFalse(version.label.contains("(server"))
+            XCTAssertGreaterThan(version.frame.minY, app.buttons["BACK"].frame.minY)
             capture(app, name: "Controls switches \(landscape ? "landscape" : "portrait")")
         }
+        app.terminate()
+    }
+
+    @MainActor
+    func testSettingsShowConnectedServerVersion() async throws {
+        try requireOnlineTestServer()
+        let address = ProcessInfo.processInfo.environment["LEQRA_TEST_SERVER"] ?? "http://127.0.0.1:18081"
+        let base = try XCTUnwrap(URL(string: address))
+        let (data, _) = try await URLSession.shared.data(from: base.appendingPathComponent("api/build"))
+        let build = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let serverVersion = try XCTUnwrap(build?["version"] as? String)
+        let app = launch(callsign: "VersionI" + UUID().uuidString.prefix(8))
+        selectPublic(false, in: app)
+        let share = app.buttons["SHARE ROOM ONLINE ↗"]
+        reveal(share, in: app)
+        share.tap()
+        XCTAssertTrue(app.staticTexts["roomCodeValue"].waitForExistence(timeout: 20))
+        app.buttons.matching(NSPredicate(format: "label == 'Controls'")).firstMatch.tap()
+        let version = app.staticTexts["settingsVersion"]
+        reveal(version, in: app)
+        XCTAssertTrue(version.label.hasPrefix("leqra v"))
+        XCTAssertTrue(version.label.hasSuffix(" (server \(serverVersion))"))
+        XCTAssertTrue(app.scrollViews["modalScroll"].frame.contains(version.frame))
+        capture(app, name: "Settings connected server version")
         app.terminate()
     }
 

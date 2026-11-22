@@ -39,7 +39,7 @@ func TestInfinityJoinUsesProtocolEpoch(t *testing.T) {
 	}
 }
 
-func TestInfinityWelcomesAdvertiseProtocolEpoch(t *testing.T) {
+func TestInfinityWelcomesAdvertiseProtocolAndServerVersion(t *testing.T) {
 	arena := newInfiniteArena()
 	pilot, spectator := fakeClient(), fakeClient()
 	if !arena.welcome(pilot, &infinitePilot{}, nil, 1, false) || !arena.addObserver(spectator, &infiniteObserver{}, 1, false, 0) {
@@ -49,6 +49,9 @@ func TestInfinityWelcomesAdvertiseProtocolEpoch(t *testing.T) {
 		packets := drain(c)
 		if len(packets) == 0 || packets[0]["type"] != "welcome" || packets[0]["protocol"] != float64(protocolVersion) {
 			t.Fatalf("welcome did not advertise the protocol epoch: %#v", packets)
+		}
+		if packets[0]["version"] != version {
+			t.Fatalf("welcome did not advertise the server release: %#v", packets)
 		}
 	}
 }

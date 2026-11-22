@@ -305,6 +305,8 @@ private struct ServerProtocolMetadata: Decodable {
     public static let protocolVersion = 1
     public var onEvent: ((NetworkEvent) -> Void)?
     public private(set) var connected = false
+    public var connectedServerVersion: String? { connected ? serverVersion : nil }
+    private var serverVersion: String?
     public private(set) var welcome: NetworkWelcome?
     public var lastInputSequence: UInt64 { sentSequence }
     public var lastLocalInputSequence: UInt64 { localSentSequence }
@@ -863,6 +865,7 @@ private struct ServerProtocolMetadata: Decodable {
     private func invalidate() {
         epoch = UUID()
         connected = false
+        serverVersion = nil
         welcome = nil
         latencySampler = NetworkLatencySampler()
         queuedSends = 0
@@ -961,12 +964,14 @@ private struct ServerProtocolMetadata: Decodable {
         case "server_hello":
             guard !isInfinity else { throw GameNetworkError.invalidResponse }
             try Self.validateServerProtocol(data)
+            if let version = object["version"] as? String, !version.isEmpty { serverVersion = version }
             sendCommand([
                 "type": "client_hello", "version": Self.supportedVersion, "protocol": Self.protocolVersion,
             ])
             sendCommand(pendingJoin)
         case "welcome":
             try Self.validateServerProtocol(data)
+            if let version = object["version"] as? String, !version.isEmpty { serverVersion = version }
             let info = try JSONDecoder().decode(NetworkWelcome.self, from: data)
             if let expected = pendingLocalAccountKey, info.localPublicToken != expected {
                 guard info.localPublicToken != nil else { throw GameNetworkError.localAccountUnconfirmed }

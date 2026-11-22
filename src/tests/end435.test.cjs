@@ -160,6 +160,7 @@ function boot() {
     },
   }
   const s = {
+    updateSettingsVersion() {},
     console,
     Promise,
     WebSocket: { OPEN: 1 },

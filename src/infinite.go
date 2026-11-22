@@ -359,6 +359,7 @@ func (a *infiniteArena) welcome(c *Client, primary, local *infinitePilot, genera
 	packet := struct {
 		Type             string `json:"type"`
 		Protocol         int    `json:"protocol"`
+		Version          string `json:"version"`
 		ID               int    `json:"id"`
 		Seed             uint32 `json:"seed"`
 		LocalID          int    `json:"localId,omitempty"`
@@ -367,7 +368,7 @@ func (a *infiniteArena) welcome(c *Client, primary, local *infinitePilot, genera
 		PublicToken      string `json:"publicToken,omitempty"`
 		LocalPublicToken string `json:"localPublicToken,omitempty"`
 		Public           bool   `json:"public,omitempty"`
-	}{Type: "welcome", Protocol: protocolVersion, ID: primary.ID, Seed: a.seed, Generation: generation, Resumed: resumed, PublicToken: primary.publicToken, Public: a.publicEntries != nil}
+	}{Type: "welcome", Protocol: protocolVersion, Version: version, ID: primary.ID, Seed: a.seed, Generation: generation, Resumed: resumed, PublicToken: primary.publicToken, Public: a.publicEntries != nil}
 	if local != nil {
 		packet.LocalID = local.ID
 		if local.publicToken != primary.publicToken {

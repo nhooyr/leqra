@@ -1,4 +1,8 @@
-## Changelog
+# Changelog
+
+## v5.8.3
+
+- Show the connected server's version beside the app version at the bottom of Settings on web, iOS, and Android.
 
 ## v5.8.2
 

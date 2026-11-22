@@ -53,6 +53,7 @@ function boot() {
     { id: 1, name: "BOT" },
   ]
   s = {
+    updateSettingsVersion() {},
     URL,
     window: {},
     GAME_VERSION: "test-client",

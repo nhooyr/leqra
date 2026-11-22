@@ -34,6 +34,16 @@ internal class GameSession(context: Context) {
     private val activeNetwork: NativeNetworkClient
         get() = if (arenaActive) arenaNetwork else network
 
+    val settingsVersionText: String
+        get() {
+            val serverVersion =
+                if (arenaActive)
+                    arenaNetwork.connectedServerVersion ?: network.connectedServerVersion
+                else network.connectedServerVersion ?: arenaNetwork.connectedServerVersion
+            return "leqra ${BuildConfig.GAME_VERSION}" +
+                (serverVersion?.let { " (server $it)" } ?: "")
+        }
+
     val canImportAccount: Boolean
         get() =
             screen == Screen.READY &&

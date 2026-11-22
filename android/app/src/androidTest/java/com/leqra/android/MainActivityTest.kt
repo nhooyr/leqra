@@ -2731,7 +2731,10 @@ class MainActivityTest {
                     actionsBeforeSettings,
                     titles.filter { it in actionsBeforeSettings || it.endsWith("ACCOUNT KEY") },
                 )
-                assertEquals(listOf("RESET ALL SETTINGS", "BACK"), titles.takeLast(2))
+                assertEquals(
+                    listOf("RESET ALL SETTINGS", "BACK", "leqra ${BuildConfig.GAME_VERSION}"),
+                    titles.takeLast(3),
+                )
                 val reset =
                     views.filterIsInstance<android.widget.Button>().single {
                         it.text == "RESET ALL SETTINGS"

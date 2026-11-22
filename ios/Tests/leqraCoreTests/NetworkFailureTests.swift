@@ -4,6 +4,24 @@ import XCTest
 @testable import leqraCore
 
 final class NetworkFailureTests: XCTestCase {
+    @MainActor func testConnectedServerVersionFollowsHandshakeAndClearsOnDisconnect() throws {
+        let client = NetworkClient()
+        defer { client.disconnect() }
+        try client.receive(Data(#"{"type":"server_hello","version":"v9.1.0-dev","protocol":1}"#.utf8))
+        XCTAssertNil(client.connectedServerVersion)
+        try client.receive(Data(#"{"type":"welcome","id":0,"protocol":1}"#.utf8))
+        XCTAssertEqual(client.connectedServerVersion, "v9.1.0-dev")
+        client.disconnect()
+        XCTAssertNil(client.connectedServerVersion)
+        try client.receive(
+            Data(#"{"type":"welcome","id":1,"public":true,"version":"v9.2.0","protocol":1}"#.utf8))
+        XCTAssertEqual(client.connectedServerVersion, "v9.2.0")
+        client.disconnect()
+        try client.receive(Data(#"{"type":"welcome","id":1,"protocol":1}"#.utf8))
+        XCTAssertNil(
+            client.connectedServerVersion, "A new server cannot inherit the previous server's version")
+    }
+
     @MainActor func testBuildDiscoveryAcceptsDifferentOrMissingReleasesOnTheSameProtocol() {
         for build in [
             #"{"version":"99.0.0","protocol":\#(NetworkClient.protocolVersion)}"#,

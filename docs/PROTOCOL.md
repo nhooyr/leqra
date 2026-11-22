@@ -1,10 +1,10 @@
-# leqra v5.8.2 — current game protocol (protocol 1)
+# leqra v5.8.3 — current game protocol (protocol 1)
 
 The network protocol epoch is **1**. Clients and servers can play together when they use the same epoch. Release versions identify builds and remain available for display and update prompts. Current versions include their `v` prefix and optional suffix, such as `v5.8.1-dev`.
 
 ```json
-{"type":"server_hello","version":"v5.8.2","protocol":1}
-{"type":"client_hello","version":"v5.8.2","protocol":1}
+{"type":"server_hello","version":"v5.8.3","protocol":1}
+{"type":"client_hello","version":"v5.8.3","protocol":1}
 ```
 
 The fixed-room socket requires `client_hello` before room and matchmaking actions. The server replies with `client_ready` on success. An incompatible protocol receives an error with `code: "version_mismatch"`, `action: "version"`, `serverVersion`, and the required `protocol`.
@@ -27,7 +27,7 @@ The server shares immutable encoded JSON between equal views and compresses it i
 
 `GET /api/infinity` returns uncached public-arena `players`, `tankCount`, `capacity`, and up to ten ranked `leaders` with tank names, scores and colors. The room preview reads these standings immediately, then every second, without allocating a tank or joining a room. The same request supplies the menu's server round-trip measurement, refreshing ping and the online count together. Private arenas are not included. Public roaming bots use mostly Dumb difficulty, with Medium and rare Godlike encounters on the schedule below; private rooms retain their configured bot settings.
 
-`/ws/infinite` accepts a JSON `join` with the matching numeric `protocol` and a `name` or room credentials. The `version` field is available for older servers that require their release. A legacy join that omits `protocol` uses epoch **1**. An incompatible protocol receives the same version error as the fixed-room socket. The `welcome` includes the `protocol`, the pilot's `id`, and a shared maze `seed`. Send `input` with increasing `seq` and the usual movement, aim and fire fields. Duplicate and older sequences are ignored before changing controls, pause state, fire edges or activity time. Each local seat has its own sequence, beginning at 1 after an authenticated controller binding; an ordinary tank respawn retains that connection's chronology. Tank `ack` and `ackSteps` describe the latest input consumed by the server and its elapsed simulation steps. `spawnSerial` identifies each life.
+`/ws/infinite` accepts a JSON `join` with the matching numeric `protocol` and a `name` or room credentials. The `version` field is available for older servers that require their release. A legacy join that omits `protocol` uses epoch **1**. An incompatible protocol receives the same version error as the fixed-room socket. The `welcome` includes the `protocol`, server `version`, the pilot's `id`, and a shared maze `seed`. Player and spectator clients display that version in Settings while connected. Send `input` with increasing `seq` and the usual movement, aim and fire fields. Duplicate and older sequences are ignored before changing controls, pause state, fire edges or activity time. Each local seat has its own sequence, beginning at 1 after an authenticated controller binding; an ordinary tank respawn retains that connection's chronology. Tank `ack` and `ackSteps` describe the latest input consumed by the server and its elapsed simulation steps. `spawnSerial` identifies each life.
 
 Public joins may send `localName` for a second tank, with optional `colorIndex` and `localColorIndex` palette selections from 0 to 7. Private joins derive Player 2 and both tanks' paint from the authenticated room roster. A two-seat `welcome` includes `localId`. Send Player 2 inputs with `local: true` and an independent sequence. The server sends one snapshot covering both tanks' views.
 
@@ -52,8 +52,8 @@ Private `welcome` includes the run's `generation`. If the Infinity socket discon
 A room spectator can watch a running **private** Infinity arena without taking a tank seat:
 
 ```json
-{"type":"join","version":"v5.8.2","protocol":1,"code":"FRIENDS","token":"existing-room-token","spectating":true,"resume":true,"generation":3,"target":12}
-{"type":"welcome","protocol":1,"id":0,"seed":123,"generation":3,"resumed":true,"spectating":true,"following":12}
+{"type":"join","version":"v5.8.3","protocol":1,"code":"FRIENDS","token":"existing-room-token","spectating":true,"resume":true,"generation":3,"target":12}
+{"type":"welcome","protocol":1,"version":"v5.8.2","id":0,"seed":123,"generation":3,"resumed":true,"spectating":true,"following":12}
 ```
 
 The room token must identify a current human spectator in that room and generation. The `spectating` flag alone grants no access; combat pilots, forged tokens, other rooms, and Public Infinity cannot use this path. No tank, score, account, input authority, player capacity, readiness, or roaming-bot population is allocated. Spectator welcomes contain no local tank ID or account bearer. The ordinary room socket remains connected for membership and role changes.

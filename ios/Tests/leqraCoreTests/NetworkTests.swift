@@ -145,6 +145,9 @@ final class NetworkTests: XCTestCase {
         else {
             throw XCTSkip("Set LEQRA_TEST_SERVER to a disposable local server to exercise native WebSockets.")
         }
+        let (buildData, _) = try await URLSession.shared.data(from: base.appendingPathComponent("api/build"))
+        let build = try JSONSerialization.jsonObject(with: buildData) as? [String: Any]
+        let expectedVersion = try XCTUnwrap(build?["version"] as? String)
         let publicClient = NetworkClient()
         let roomClient = NetworkClient()
         let arenaClient = NetworkClient()
@@ -170,6 +173,7 @@ final class NetworkTests: XCTestCase {
         publicClient.connectPublic(baseURL: base, name: publicName, colorIndex: 2)
         try await waitFor { publicWelcome != nil && publicState != nil || !errors.isEmpty }
         XCTAssertTrue(errors.isEmpty, errors.joined(separator: ", "))
+        XCTAssertEqual(publicClient.connectedServerVersion, expectedVersion)
         let publicID = try XCTUnwrap(publicWelcome?.id)
         XCTAssertTrue(
             publicState?.tanks.contains { $0.id == publicID && $0.name == publicName && $0.colorIndex == 2 }
@@ -183,6 +187,7 @@ final class NetworkTests: XCTestCase {
             publicState?.tanks.contains { $0.id == publicID && $0.ack == 2 } == true || !errors.isEmpty
         }
         publicClient.disconnect()
+        XCTAssertNil(publicClient.connectedServerVersion)
 
         var roomWelcome: NetworkWelcome?
         var room: RoomInfo?
@@ -200,6 +205,7 @@ final class NetworkTests: XCTestCase {
         }
         roomClient.connectRoom(baseURL: base, name: roomName)
         try await waitFor { roomWelcome != nil && room != nil || !errors.isEmpty }
+        XCTAssertEqual(roomClient.connectedServerVersion, expectedVersion)
         let roomID = try XCTUnwrap(roomWelcome?.id)
         let code = try XCTUnwrap(roomWelcome?.room)
         let token = try XCTUnwrap(roomWelcome?.token)
@@ -234,6 +240,7 @@ final class NetworkTests: XCTestCase {
         }
         arenaClient.connectRoomInfinity(baseURL: base, code: code, token: token)
         try await waitFor { arenaWelcome?.seed != nil && arenaState != nil || !errors.isEmpty }
+        XCTAssertEqual(arenaClient.connectedServerVersion, expectedVersion)
         XCTAssertTrue(arenaState?.tanks.contains { $0.id == arenaWelcome?.id && $0.name == roomName } == true)
         XCTAssertTrue(errors.isEmpty, errors.joined(separator: ", "))
         arenaClient.disconnect()

@@ -34,6 +34,7 @@ test("FPS uses the fixed canvas corner and the Infinity header, with one shared 
     combatPrefs: { fps: true, performance: false },
     resetFrameSample() {},
     initMenuPing() {},
+    updateSettingsVersion() {},
     resize() {},
     storePerformancePrefs() {},
     document: { addEventListener() {} },
@@ -51,6 +52,8 @@ test("FPS uses the fixed canvas corner and the Infinity header, with one shared 
   const performance = insertions.find((row) => row.name === "Reset All Settings")
   assert.equal(performance.position, "beforebegin")
   assert.match(performance.html, /> FPS and ping time<\/label>/)
+  const version = insertions.find((row) => row.html.includes('id="settingsVersion"'))
+  assert.equal(version.position, "afterend", "The version appears at the bottom, after Reset")
   assert.equal($("fpsIndicator").hidden, false)
   assert.equal($("infiniteFPSIndicator").hidden, false)
   $("showFPS").checked = false
@@ -61,6 +64,33 @@ test("FPS uses the fixed canvas corner and the Infinity header, with one shared 
   $("showFPS").onchange()
   assert.equal($("fpsIndicator").hidden, false)
   assert.equal($("infiniteFPSIndicator").hidden, false)
+})
+
+test("Settings footer shows only the current connected room or Infinity server version", () => {
+  const label = { textContent: "" }
+  const env = {
+    GAME_VERSION: "v5.8.2-dev",
+    online: { connected: false, serverVersion: "v5.7.0" },
+    window: { leqraInfinity: { serverVersion: "" } },
+    $: () => label,
+  }
+  vm.createContext(env)
+  for (const name of ["settingsVersionText", "updateSettingsVersion"]) {
+    const start = sourceIndex(source, "function " + name + "(")
+    vm.runInContext(source.slice(start, functionEnd(source, start)), env)
+  }
+  env.updateSettingsVersion()
+  assert.equal(label.textContent, "leqra v5.8.2-dev")
+  env.online.connected = true
+  env.updateSettingsVersion()
+  assert.equal(label.textContent, "leqra v5.8.2-dev (server v5.7.0)")
+  env.window.leqraInfinity.serverVersion = "v9.0.0-dev"
+  env.updateSettingsVersion()
+  assert.equal(label.textContent, "leqra v5.8.2-dev (server v9.0.0-dev)")
+  env.online.connected = false
+  env.window.leqraInfinity.serverVersion = ""
+  env.updateSettingsVersion()
+  assert.equal(label.textContent, "leqra v5.8.2-dev")
 })
 
 test("frame readouts label real ping during online play and omit it for offline matches", () => {

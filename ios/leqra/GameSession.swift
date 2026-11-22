@@ -155,6 +155,14 @@ final class GameSession: ObservableObject {
     private let audio = GameAudio()
     private let roomClient = NetworkClient()
     private let arenaClient = NetworkClient()
+
+    var settingsVersionText: String {
+        let server =
+            arenaActive
+            ? arenaClient.connectedServerVersion ?? roomClient.connectedServerVersion
+            : roomClient.connectedServerVersion ?? arenaClient.connectedServerVersion
+        return "leqra \(NetworkClient.supportedVersion)" + (server.map { " (server \($0))" } ?? "")
+    }
     private let publicSessions: PublicInfinitySessionStoring
     private let callsignDrafts: CallsignDraftStore
     private var applyingGeneratedCallsign = false

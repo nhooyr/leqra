@@ -957,6 +957,18 @@ test("offline Infinity last Shield charge and last weapon charge refill immediat
   assert.equal(t.ammoEpoch, 1)
   h.infinity.close()
 })
+test("Infinity reports only its currently connected server version", () => {
+  const h = harness(undefined, true)
+  h.infinity.start("online")
+  const socket = h.sockets[0]
+  assert.equal(h.infinity.serverVersion, "")
+  socket.receive({ type: "welcome", id: 1, seed: 0, version: "v9.0.0-dev" })
+  assert.equal(h.infinity.serverVersion, "v9.0.0-dev")
+  socket.close()
+  assert.equal(h.infinity.serverVersion, "")
+  h.infinity.close()
+})
+
 test("local online Infinity shots bypass remote interpolation for both pilots", () => {
   const h = harness(undefined, true)
   h.infinity.start("online", { localName: "Wingmate" })

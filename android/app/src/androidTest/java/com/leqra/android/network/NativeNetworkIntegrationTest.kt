@@ -42,6 +42,36 @@ class NativeNetworkIntegrationTest {
     }
 
     @Test
+    fun connectedServerVersionFollowsRoomAndInfinityHandshakesAndDisconnect() {
+        val origin = server()
+        val version = JSONObject(java.net.URL("$origin/api/build").readText()).getString("version")
+        val context = isolatedAccountContext()
+        val events = LinkedBlockingQueue<NetworkEvent>()
+        val name = "Version" + java.util.UUID.randomUUID().toString().take(8)
+        lateinit var client: NativeNetworkClient
+        main { client = NativeNetworkClient(EncryptedAccountStore(context), events::offer) }
+        try {
+            for (infinity in listOf(true, false)) {
+                events.clear()
+                main {
+                    assertNull(client.connectedServerVersion)
+                    if (infinity) client.connectPublic(origin, name, 0)
+                    else client.connectRoom(origin, name)
+                }
+                next(events) { it is NetworkEvent.Welcome }
+                main {
+                    assertEquals(version, client.connectedServerVersion)
+                    client.disconnect()
+                    assertNull(client.connectedServerVersion)
+                }
+            }
+        } finally {
+            main { client.close() }
+            context.noBackupFilesDir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun unicodeEquivalentSavedCallsignReauthenticatesItsOriginalAccount() {
         val origin = server()
         val context = isolatedAccountContext()

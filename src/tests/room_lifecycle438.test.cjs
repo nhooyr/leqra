@@ -41,6 +41,7 @@ function boot() {
     players: [{ id: 0, member: 1, name: "HOST", kind: "human" }],
   }
   const s = {
+    updateSettingsVersion() {},
     URL,
     mode: "room",
     phase: "menu",

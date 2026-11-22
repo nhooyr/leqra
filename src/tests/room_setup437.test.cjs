@@ -34,6 +34,7 @@ function boot() {
     return nodes.get(id)
   }
   const s = {
+    updateSettingsVersion() {},
     URL,
     $,
     window: {},

@@ -163,7 +163,10 @@ const server = http.createServer((req, res) => {
                 )
                 const collides = near && (near !== "corner" || kind !== "rapid")
                 assert.ok(value.draw, engine + " " + arena + " drew no turret")
-                assert.ok(Math.abs(value.draw.angle) < 1e-8, "barrel must face east while the hull faces south")
+                assert.ok(
+                  Math.abs(value.draw.angle) < 1e-8,
+                  "barrel must face east while the hull faces south",
+                )
                 assert.ok(
                   value.draw.tip <= (collides ? 21.500001 : 26.000001),
                   JSON.stringify({ engine, arena, kind, near, value }),

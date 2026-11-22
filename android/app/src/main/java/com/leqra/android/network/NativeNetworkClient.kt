@@ -59,6 +59,10 @@ class NativeNetworkClient(
     var connected: Boolean = false
         private set
 
+    private var serverVersion: String? = null
+    val connectedServerVersion: String?
+        get() = if (connected) serverVersion else null
+
     var welcome: NetworkWelcome? = null
         private set
 
@@ -373,6 +377,7 @@ class NativeNetworkClient(
         socket?.close(1001, null)
         socket = null
         connected = false
+        serverVersion = null
         welcome = null
         pingTimes.clear()
     }
@@ -685,6 +690,7 @@ class NativeNetworkClient(
                         "The server sent an unexpected room handshake.",
                     )
                 GameWireProtocol.check(json)
+                json.stringOrNull("version")?.takeIf { it.isNotBlank() }?.let { serverVersion = it }
                 send(
                     JSONObject()
                         .put("type", "client_hello")
@@ -695,6 +701,7 @@ class NativeNetworkClient(
             }
             "welcome" -> {
                 GameWireProtocol.check(json)
+                json.stringOrNull("version")?.takeIf { it.isNotBlank() }?.let { serverVersion = it }
                 acceptWelcome(json, identity = false)
             }
             "identity" -> acceptWelcome(json, identity = true)
