@@ -8,6 +8,15 @@ public enum TankMovement {
     public static func effectiveSpeedStacks(_ tank: ArenaTank) -> Int {
         max(tank.speedTime > 0 ? max(1, min(5, tank.speedStacks)) : 0, tank.starmanTime > 0 ? 2 : 0)
     }
+    public static func blendBody(
+        tank: inout ArenaTank, from first: ArenaTank, to second: ArenaTank, fraction: Double
+    ) {
+        tank.independentAim = first.independentAim || second.independentAim
+        let change = atan2(
+            sin(second.movementAngle - first.movementAngle), cos(second.movementAngle - first.movementAngle))
+        tank.bodyAngle = tank.independentAim ? first.movementAngle + change * fraction : 0
+    }
+
     /// Present a fractional tick along the same path endpoints as the fixed
     /// simulation. Fractional Euler steps trace a different curve from a full
     /// tick, resetting the displayed velocity at every tick boundary.
@@ -42,6 +51,7 @@ public enum TankMovement {
             result.y += (next.y - tank.y) * alpha
             result.angle += atan2(sin(next.angle - tank.angle), cos(next.angle - tank.angle)) * alpha
             result.track += (next.track - tank.track) * alpha
+            blendBody(tank: &result, from: tank, to: next, fraction: alpha)
             return result
         }
         // Tangents must follow the fixed-step position polygon. Instantaneous
@@ -111,6 +121,7 @@ public enum TankMovement {
             ?? (3 * angle - futureAngle) / 2
         let angleEnd = (angle + futureAngle) / 2
         result.angle = tank.angle + curve(0, angle, angleStart, angleEnd, monotone: true)
+        blendBody(tank: &result, from: tank, to: next, fraction: alpha)
         result.track = tank.track + (next.track - tank.track) * alpha
         if !canInterpolate(tank, result) {
             result.x = tank.x + (next.x - tank.x) * alpha
@@ -171,13 +182,14 @@ public enum TankMovement {
         if tank.speedTime <= 0 { tank.speedStacks = 0 }
         if ageGhost { advanceGhost(tank: &tank, dt: dt, maze: maze) }
         let stacks = effectiveSpeedStacks(tank)
-        let steering = steer(angle: tank.angle, input: input, turnScale: 1 + 0.25 * Double(stacks), dt: dt)
-        tank.angle = steering.angle
+        let steering = steer(
+            angle: tank.movementAngle, input: input, turnScale: 1 + 0.25 * Double(stacks), dt: dt)
+        applyAim(tank: &tank, input: input, bodyAngle: steering.angle)
         let speed = 128 * (1 + 0.65 * Double(stacks))
         let oldX = tank.x
         let oldY = tank.y
-        let dx = cos(tank.angle) * speed * steering.throttle * dt
-        let dy = sin(tank.angle) * speed * steering.throttle * dt
+        let dx = cos(steering.angle) * speed * steering.throttle * dt
+        let dy = sin(steering.angle) * speed * steering.throttle * dt
         if tank.ghostTime > 0 || !maze.blocked(x: tank.x + dx, y: tank.y, radius: 17) { tank.x += dx }
         if tank.ghostTime > 0 || !maze.blocked(x: tank.x, y: tank.y + dy, radius: 17) { tank.y += dy }
         tank.track += hypot(tank.x - oldX, tank.y - oldY)
@@ -195,18 +207,25 @@ public enum TankMovement {
         if tank.speedTime <= 0 { tank.speedStacks = 0 }
         if ageGhost { advanceGhost(tank: &tank, dt: dt, walls: walls, width: width, height: height) }
         let stacks = effectiveSpeedStacks(tank)
-        let steering = steer(angle: tank.angle, input: input, turnScale: 1 + 0.25 * Double(stacks), dt: dt)
-        tank.angle = steering.angle
+        let steering = steer(
+            angle: tank.movementAngle, input: input, turnScale: 1 + 0.25 * Double(stacks), dt: dt)
+        applyAim(tank: &tank, input: input, bodyAngle: steering.angle)
         let speed = 128 * (1 + 0.65 * Double(stacks))
         let oldX = tank.x
         let oldY = tank.y
-        tank.x += cos(tank.angle) * speed * steering.throttle * dt
+        tank.x += cos(steering.angle) * speed * steering.throttle * dt
         if tank.ghostTime == 0 { resolveWalls(tank: &tank, walls: walls) }
-        tank.y += sin(tank.angle) * speed * steering.throttle * dt
+        tank.y += sin(steering.angle) * speed * steering.throttle * dt
         if tank.ghostTime == 0 { resolveWalls(tank: &tank, walls: walls) }
         tank.x = min(max(tank.x, 21), width - 21)
         tank.y = min(max(tank.y, 21), height - 21)
         tank.track += hypot(tank.x - oldX, tank.y - oldY)
+    }
+
+    private static func applyAim(tank: inout ArenaTank, input: GameInput, bodyAngle: Double) {
+        tank.independentAim = hypot(input.aimX, input.aimY) > 0.1
+        tank.bodyAngle = tank.independentAim ? bodyAngle : 0
+        tank.angle = tank.independentAim ? atan2(input.aimY, input.aimX) : bodyAngle
     }
 
     private static func resolveWalls(tank: inout ArenaTank, walls: [MazeWall]) {

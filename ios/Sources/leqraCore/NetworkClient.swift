@@ -796,7 +796,7 @@ private struct ServerProtocolMetadata: Decodable {
             "left": !paused && input.left, "right": !paused && input.right,
             "fire": !paused && input.fire, "stickX": paused ? 0 : input.stickX,
             "stickY": paused ? 0 : input.stickY, "touchAim": input.touchAim, "aimOnly": input.aimOnly,
-            "snapAim": input.snapAim,
+            "snapAim": input.snapAim, "aimX": paused ? 0 : input.aimX, "aimY": paused ? 0 : input.aimY,
         ]
         if isInfinity {
             command["paused"] = paused

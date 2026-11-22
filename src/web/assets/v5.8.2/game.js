@@ -20,7 +20,7 @@
       "This browser cannot create a 2D canvas. Please open the game in another browser."
     return
   }
-  const GAME_VERSION = "v5.8.1"
+  const GAME_VERSION = "v5.8.2"
   const GAME_PROTOCOL = 1
   const TAU = Math.PI * 2,
     CELL = 84,
@@ -1905,6 +1905,7 @@
     keys.clear()
     gamepads.clear()
     firePointers.clear()
+    clearTimeout(fireDrag.holdTimer)
     fireDrag.id = null
     fireDrag.active = false
     firePresses.clear()
@@ -3440,6 +3441,8 @@
       n = Net.movementStacks(t),
       speedScale = 1 + BOOST_SPEED_PER_STACK * n,
       turnScale = 1 + BOOST_TURN_PER_STACK * n
+    if (!controls && p1 && directAim.active) controls = localMovementInput(t)
+    t.angle = Net.bodyHeading(t)
     const forward = controls ? controls.forward : heldAction(p1 ? 0 : 1, "forward")
     const reverse = controls ? controls.reverse : heldAction(p1 ? 0 : 1, "reverse")
     const left = controls ? controls.left : heldAction(p1 ? 0 : 1, "left")
@@ -3474,6 +3477,7 @@
     } else t.angle += ((right ? 1 : 0) - (left ? 1 : 0)) * 3.65 * turnScale * dt
     const speed = 128 * speedScale
     moveTank(t, Math.cos(t.angle) * speed * throttle * dt, Math.sin(t.angle) * speed * throttle * dt)
+    Net.applyTurretAim(t, controls || {})
     if (moveOnly) return
     const held = p1 ? primaryFireHeld() : secondaryFireHeld()
     const pressed = firePresses.delete(t.id) || (mouse && mouseAim.firePressed)
@@ -5911,7 +5915,7 @@
     if (!t.alive) {
       ctx.save()
       ctx.translate(t.x, t.y)
-      ctx.rotate(t.angle)
+      ctx.rotate(Net.bodyHeading(t))
       ctx.globalAlpha = 0.6
       ctx.fillStyle = paintColor("#091116")
       roundRect(ctx, -18, -16, 36, 32, 5)
@@ -5980,7 +5984,7 @@
       ctx.setLineDash([])
       ctx.globalAlpha = 1
     }
-    ctx.rotate(t.angle)
+    ctx.rotate(Net.bodyHeading(t))
     if (t.speedTime > 0) {
       ctx.save()
       ctx.strokeStyle = paintColor(POWER.speed.color)
@@ -6008,6 +6012,7 @@
       ctx.globalAlpha = starman ? 0.84 : 0.58
     }
     drawCachedTankHull(t)
+    ctx.rotate(t.angle - Net.bodyHeading(t))
     paintTankTurret(ctx, t)
     ctx.restore()
     const status = tankStatusLayout(t)
@@ -6473,11 +6478,13 @@
     const left = heldAction(index, "left"),
       right = heldAction(index, "right")
     const snap = primary && directAim.active,
-      aim = snap
-        ? directAim.angle
-        : mouse && (!primary || stick.mag <= 0.1) && !left && !right
-          ? mouseAimHeading(t)
-          : null
+      independent = snap && directAim.independent,
+      aim =
+        snap && !independent
+          ? directAim.angle
+          : !independent && mouse && (!primary || stick.mag <= 0.1) && !left && !right
+            ? mouseAimHeading(t)
+            : null
     const input = {
       forward: heldAction(index, "forward"),
       reverse: heldAction(index, "reverse"),
@@ -6487,9 +6494,11 @@
       stickX: aim !== null ? Math.cos(aim) : primary ? stick.x : 0,
       stickY: aim !== null ? Math.sin(aim) : primary ? stick.y : 0,
       aimOnly: aim !== null,
-      snapAim: snap,
+      snapAim: snap && !independent,
       touchAim: primary && stick.mag > 0.1 && stick.assisted,
     }
+    if (independent)
+      Object.assign(input, Net.fireAimInput(Math.cos(directAim.angle), Math.sin(directAim.angle)))
     const pad = gamepadInput(index)
     return pad ? window.leqraGamepads.merge(input, pad, primary && (snap || stick.mag > 0.1)) : input
   }
@@ -8881,8 +8890,41 @@
       JSON.stringify(currentRules()) === rules &&
       roster() === initialRoster
   }
+  function savedPilotColor(seat) {
+    try {
+      const color = JSON.parse(localStorage.getItem("leqra.pilotColors") || "[]")[seat]
+      if (Number.isInteger(color) && color >= 0 && color < COLORS.length) return color
+    } catch (_) {}
+    return seat
+  }
+  function rememberPilotColor(seat, color) {
+    const colors = [savedPilotColor(0), savedPilotColor(1)]
+    colors[seat] = color
+    try {
+      localStorage.setItem("leqra.pilotColors", JSON.stringify(colors))
+    } catch (_) {}
+  }
+  function randomizePilotColor(seat) {
+    const roster = mode === "online" ? roomMembers(roomData()) : localRoom.players
+    const pilot = seat ? secondaryMember() : roster.find((p) => p.id === localPlayerID())
+    const other = seat ? roster.find((p) => p.id === localPlayerID()) : secondaryMember()
+    const paint = (p) => colorIndex(p.id, 0, p.colorIndex)
+    const current = pilot ? paint(pilot) : savedPilotColor(seat)
+    const used = roster.filter((p) => p.kind === "bot").map(paint)
+    used.push(other ? paint(other) : savedPilotColor(1 - seat))
+    const color = window.leqraCallsigns.randomColor(current, used)
+    rememberPilotColor(seat, color)
+    if (pilot) {
+      if (mode === "online") changeTankColor(pilot, color)
+      else pilot.colorIndex = color
+    }
+    persistLocalRoomRules()
+    resetPreviewIfLobby()
+    renderOnlineRoom()
+  }
   function initGeneratedCallsigns() {
     window.leqraCallsigns?.init({
+      recolor: randomizePilotColor,
       token: publicIdentityToken,
       remember: rememberPublicIdentity,
       prepareLocal: prepareLocalAccount,
@@ -8905,7 +8947,10 @@
           renderOnlineRoom()
           updateHUD(true)
         }
-        if (context) context.field.value = name
+        if (context) {
+          randomizePilotColor(seat)
+          context.field.value = name
+        }
       },
       offline: () =>
         mode === "room" && (!$("infiniteArena").open || $("infiniteArena").dataset.mode === "offline"),
@@ -8927,6 +8972,7 @@
       },
       async apply(seat, name, context) {
         await selectCallsignAccount(seat, name, context?.draft || generatedCallsign(seat))
+        randomizePilotColor(seat)
         if (context) context.field.value = name
       },
     })
@@ -9155,11 +9201,13 @@
       left = heldAction(index, "left"),
       right = heldAction(index, "right")
     const snap = !second && directAim.active,
-      aim = snap
-        ? directAim.angle
-        : mouse && !left && !right && (second || stick.mag <= 0.1)
-          ? mouseAimHeading((second ? online.secondary : online)?.predictor?.state || tank)
-          : null
+      independent = snap && directAim.independent,
+      aim =
+        snap && !independent
+          ? directAim.angle
+          : !snap && mouse && !left && !right && (second || stick.mag <= 0.1)
+            ? mouseAimHeading((second ? online.secondary : online)?.predictor?.state || tank)
+            : null
     const input = {
       forward: heldAction(index, "forward"),
       reverse: heldAction(index, "reverse"),
@@ -9170,7 +9218,9 @@
       stickY: aim !== null ? Math.sin(aim) : second ? 0 : stick.y,
       aimOnly: aim !== null,
     }
-    if (snap) input.snapAim = true
+    if (snap && !independent) input.snapAim = true
+    if (independent)
+      Object.assign(input, Net.fireAimInput(Math.cos(directAim.angle), Math.sin(directAim.angle)))
     if (!second && stick.assisted && stick.mag > 0.1) input.touchAim = true
     const pad = gamepadInput(index)
     return pad ? window.leqraGamepads.merge(input, pad, !second && (snap || stick.mag > 0.1)) : input
@@ -10841,12 +10891,16 @@
       online.shots.tryFire(auth, !!controls.fire, now, { active: false, sequence: channel.seq })
       return
     }
-    const age = (now - online.snapshots.at(-1).received) / 1000
+    const age = (now - online.snapshots.at(-1).received) / 1000,
+      turretAim =
+        Math.hypot(controls.aimX || 0, controls.aimY || 0) > 0.1
+          ? Math.atan2(controls.aimY || 0, controls.aimX || 0)
+          : null
     let t = {
       ...auth,
       x: pose.x,
       y: pose.y,
-      angle: pose.angle,
+      angle: turretAim ?? pose.angle,
       ghostTime: pose.ghostTime,
       starmanTime: Math.max(0, (auth.starmanTime || 0) - age),
     }
@@ -10870,7 +10924,7 @@
     // Use the corrected visual pose for the muzzle; movement state is never changed.
     const visual = tanks.find((n) => n.id === id)
     if (visual && visual.spawnSerial === auth.spawnSerial) {
-      const corrected = { ...t, x: visual.x, y: visual.y, angle: visual.angle }
+      const corrected = { ...t, x: visual.x, y: visual.y, angle: turretAim ?? visual.angle }
       if (!muzzleBlocked(corrected)) t = corrected
     }
     if (power === "laser") {
@@ -11578,6 +11632,8 @@
       },
     ]
     if (!restoreSavedLocalRoster() && localRoom.rules.teamMode === "teams") balanceLocalTeams()
+    const primary = localRoom.players.find((p) => p.id === localRoom.self)
+    if (primary.colorIndex === undefined) primary.colorIndex = savedPilotColor(0)
     ensureDefaultLocalBots()
     name = localRoom.players.find((p) => p.id === localRoom.self).name
     $("pilotName").value = name
@@ -11631,6 +11687,8 @@
       host = isRoomHost()
     if (!(p.id === me || (p.kind === "local" && p.owner === me) || (host && p.kind === "bot"))) return
     p.colorIndex = value
+    if (p.id === me) rememberPilotColor(0, value)
+    else if (p.kind === "local" && p.owner === me) rememberPilotColor(1, value)
     resetPreviewIfLobby()
     renderOnlineRoom()
   }
@@ -11721,6 +11779,7 @@
       kind,
       owner: localRoom.self,
       name,
+      ...(kind === "local" ? { colorIndex: savedPilotColor(1) } : {}),
       team,
       difficulty: kind === "bot" ? difficulty : undefined,
     })
@@ -14043,7 +14102,7 @@
             .join(" ")
     const help =
       device === "touch"
-        ? "Drag the stick to move and aim. Touch near the tank to aim in place. Drag the center of Fire to aim without shooting. Tap it to shoot, or hold the outer area for continuous fire."
+        ? "Drag the stick to move and aim. Touch near the tank to aim in place. Drag the center of Fire to aim without shooting. Tap to shoot, or hold still to fire continuously. Drive with the joystick while aiming the turret independently with Fire."
         : ""
     return (
       '<span class="control-player">' +
@@ -14067,7 +14126,7 @@
       paired = !aliases && !!(infinity?.twoPilots || hasLocalP2())
     const fireTip = '<p class="manual-fire-tip">Hold any fire key to rapid fire.</p>'
     let html =
-      '<div class="manual-line manual-touch"><span>Touch</span><span>Drag the joystick to drive and aim. Touch near the tank to aim in place. Drag the center of Fire to aim without shooting. Tap it to shoot, or hold the outer area for continuous fire.</span></div>'
+      '<div class="manual-line manual-touch"><span>Touch</span><span>Drag the joystick to drive and aim. Touch near the tank to aim in place. Drag the center of Fire to aim without shooting. Tap to shoot, or hold still to fire continuously. Drive with the joystick while aiming the turret independently with Fire.</span></div>'
     html += "<p>Connect a game controller to play.</p>"
     html += '<div class="manual-controls">' + pilotControlHint(0, "mouse", aliases, !aliases)
     if (paired) html += pilotControlHint(1, "", false, true)
@@ -16557,6 +16616,7 @@
       stickX = 0,
       stickY = 0,
       touchAim = null,
+      fireAim = null,
       practiceFireDrag = null,
       mousePoint = null,
       firePressed = false
@@ -16568,13 +16628,16 @@
       return false
     }
     const practiceFireHeld = () =>
-      held("fire") || (fireID !== null && !practiceFireDrag?.center) || !!gamepadInput(0)?.fire
+      held("fire") ||
+      (fireID !== null && (!practiceFireDrag?.center || practiceFireDrag.firing)) ||
+      !!gamepadInput(0)?.fire
     function clearPracticeInput() {
       keys.clear()
       gamepads.clear()
       stickID = aimID = fireID = null
       stickX = stickY = 0
-      touchAim = mousePoint = null
+      touchAim = fireAim = mousePoint = null
+      clearTimeout(practiceFireDrag?.holdTimer)
       practiceFireDrag = null
       fireButton.style.setProperty("--fire-aim-x", "0px")
       fireButton.style.setProperty("--fire-aim-y", "0px")
@@ -16639,7 +16702,9 @@
       const mouse = !!mousePoint && combatPrefs.mouseAim !== false
       const angle =
         touchAim ??
-        (mouse && !left && !right ? demo.aimAt(mousePoint.clientX, mousePoint.clientY, false) : null)
+        (fireAim === null && mouse && !left && !right
+          ? demo.aimAt(mousePoint.clientX, mousePoint.clientY, false)
+          : null)
       const controls = window.leqraGamepads.merge(
         {
           forward,
@@ -16655,6 +16720,7 @@
         gamepadInput(0),
         stickID !== null || touchAim !== null,
       )
+      if (fireAim !== null) Object.assign(controls, Net.fireAimInput(Math.cos(fireAim), Math.sin(fireAim)))
       while (accumulator + 1e-9 >= physicsStep) {
         const result = demo.step(physicsStep, controls, firing, canFire() && firePressed)
         firePressed = false
@@ -16696,6 +16762,7 @@
     })
     window.addEventListener("keyup", (e) => keys.delete(e.code))
     function steer(e) {
+      touchAim = null
       const box = base.getBoundingClientRect(),
         dx = e.clientX - box.left - box.width / 2,
         dy = e.clientY - box.top - box.height / 2
@@ -16708,7 +16775,6 @@
     joystick.addEventListener("pointerdown", (e) => {
       if (!interactive() || !usesTouch() || e.button !== 0 || stickID !== null) return
       e.preventDefault()
-      if (!practiceFireDrag?.active) touchAim = null
       stickID = e.pointerId
       capturePointer(joystick, stickID)
       steer(e)
@@ -16732,6 +16798,15 @@
           ),
         }
       }
+      if (practiceFireDrag?.center) {
+        const drag = practiceFireDrag
+        drag.holdTimer = setTimeout(() => {
+          if (practiceFireDrag !== drag || drag.active || !interactive()) return
+          drag.firing = true
+          firePressed = true
+          fireButton.classList.add("held")
+        }, 180)
+      }
       if (!was && !practiceFireDrag?.center) firePressed = true
       capturePointer(element, fireID)
       if (element === fireButton && !practiceFireDrag?.center) fireButton.classList.add("held")
@@ -16752,6 +16827,7 @@
         if (angle === null) return
         e.preventDefault()
         touchAim = angle
+        fireAim = null
         aimID = e.pointerId
         capturePointer(arena, aimID)
       } else if (!usesTouch() && e.pointerType === "mouse") {
@@ -16773,8 +16849,10 @@
         const direction = Net.fireAimDirection(e.clientX - practiceFireDrag.x, e.clientY - practiceFireDrag.y)
         if (direction) {
           e.preventDefault()
+          clearTimeout(practiceFireDrag.holdTimer)
           practiceFireDrag.active = true
-          touchAim = Math.atan2(direction.y, direction.x)
+          touchAim = null
+          fireAim = Math.atan2(direction.y, direction.x)
           const offset = Net.fireAimOffset(
             e.clientX - practiceFireDrag.x,
             e.clientY - practiceFireDrag.y,
@@ -16803,8 +16881,13 @@
         if (e.type === "pointercancel") touchAim = null
       }
       if (e.pointerId === fireID) {
-        const tap = practiceFireDrag?.center && !practiceFireDrag.active && e.type === "pointerup"
-        if (practiceFireDrag?.active && (e.type === "pointercancel" || stickID !== null)) touchAim = null
+        const tap =
+          practiceFireDrag?.center &&
+          !practiceFireDrag.active &&
+          !practiceFireDrag.firing &&
+          e.type === "pointerup"
+        clearTimeout(practiceFireDrag?.holdTimer)
+        if (practiceFireDrag?.active && e.type === "pointercancel") fireAim = null
         practiceFireDrag = null
         fireID = null
         fireButton.style.setProperty("--fire-aim-x", "0px")
@@ -17419,10 +17502,11 @@
     )
   }
   // All input paths (keyboard, mouse, multi-touch, focus loss) share the same cleanup.
-  const directAim = { active: false, id: null, angle: 0 }
+  const directAim = { active: false, id: null, angle: 0, independent: false }
   const fireDrag = { id: null, x: 0, y: 0, active: false, center: false }
   function clearDirectAim() {
     directAim.active = false
+    directAim.independent = false
     directAim.id = null
   }
   window.addEventListener("keydown", (e) => {
@@ -17461,7 +17545,11 @@
         wasFire = primaryFireHeld(),
         wasSecond = secondaryFireHeld()
       keys.add(e.code)
-      if (fresh && ["forward", "reverse", "left", "right"].some((action) => keyForAction(0, action, e.code)))
+      if (
+        fresh &&
+        !directAim.independent &&
+        ["forward", "reverse", "left", "right"].some((action) => keyForAction(0, action, e.code))
+      )
         clearDirectAim()
       if (
         fresh &&
@@ -17487,7 +17575,7 @@
     stick.max = Math.max(24, Math.min(r.width, r.height) * 0.375)
   }
   function stickMove(e) {
-    if (!fireDrag.active) clearDirectAim()
+    if (!directAim.independent) clearDirectAim()
     if (!stick.cx && !stick.cy) cacheStickGeometry()
     const dx = e.clientX - stick.cx,
       dy = e.clientY - stick.cy,
@@ -17511,7 +17599,7 @@
     if (e.button !== 0 || stick.id !== null) return
     e.preventDefault()
     initAudio()
-    clearDirectAim()
+    if (!directAim.independent) clearDirectAim()
     stick.id = e.pointerId
     stick.assisted = e.pointerType === "touch" || e.pointerType === "pen"
     cacheStickGeometry()
@@ -17558,6 +17646,7 @@
         x: e.clientX,
         y: e.clientY,
         active: false,
+        firing: false,
         reach: Math.min(24, Math.max(0, Math.min(rect.width, rect.height) / 2 - 17)),
         center: Net.fireAimCenter(
           e.clientX - rect.left - rect.width / 2,
@@ -17566,6 +17655,16 @@
       })
     }
     const center = fireDrag.id === e.pointerId && fireDrag.center
+    if (center)
+      fireDrag.holdTimer = setTimeout(() => {
+        if (fireDrag.id !== e.pointerId || fireDrag.active) return
+        fireDrag.firing = true
+        const wasHeld = primaryFireHeld()
+        firePointers.add(e.pointerId)
+        if (!wasHeld) firePresses.add(localPlayerID())
+        $("fireBtn").classList.add("held")
+        if (mode === "online") sendOnlineInput(true)
+      }, 180)
     if (!center) firePointers.add(e.pointerId)
     if (e.pointerType === "mouse") (mouseAim.firePointers ??= new Set()).add(e.pointerId)
     if (!was && !center) {
@@ -17586,8 +17685,10 @@
       const direction = Net.fireAimDirection(e.clientX - fireDrag.x, e.clientY - fireDrag.y)
       if (!direction) return
       e.preventDefault()
+      clearTimeout(fireDrag.holdTimer)
       fireDrag.active = true
       directAim.active = true
+      directAim.independent = true
       directAim.id = null
       directAim.angle = Math.atan2(direction.y, direction.x)
       const offset = Net.fireAimOffset(e.clientX - fireDrag.x, e.clientY - fireDrag.y, fireDrag.reach)
@@ -17599,9 +17700,10 @@
   )
   function endFire(e) {
     const pending = e.pointerId === fireDrag.id
-    const tap = pending && fireDrag.center && !fireDrag.active && e.type === "pointerup"
+    const tap = pending && fireDrag.center && !fireDrag.active && !fireDrag.firing && e.type === "pointerup"
     if (pending) {
-      if (fireDrag.active && (e.type === "pointercancel" || stick.id !== null)) clearDirectAim()
+      clearTimeout(fireDrag.holdTimer)
+      if (fireDrag.active && e.type === "pointercancel") clearDirectAim()
       fireDrag.id = null
       fireDrag.active = false
       $("fireBtn").style.setProperty("--fire-aim-x", "0px")
@@ -17683,6 +17785,7 @@
     const angle = directAimPoint(e, nearOnly)
     if (angle === null) return false
     directAim.active = true
+    directAim.independent = false
     directAim.angle = angle
     if (!hardwareUsesP2()) clearMouseAim()
     if (mode === "online") sendOnlineInput(nearOnly)

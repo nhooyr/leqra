@@ -5,7 +5,8 @@ public enum NativePreferences {
     public static let current = applicationStore()
     public static let gamepadSupportKey = "gamepadSupport"
     public static let appSettingKeys = [
-        "tankColor", "serverURL", "highFrameRate", "showFPS", "soundEnabled", "soundVolume", "nativePresets",
+        "tankColor", "localTankColor", "serverURL", "highFrameRate", "showFPS", "soundEnabled", "soundVolume",
+        "nativePresets",
         "nativeHardwareControls.v1", gamepadSupportKey,
         "callsign", "callsignAutoPending", "callsignAutoPendingName", "callsignRevision", "localCallsign",
         "localCallsignAutoPending", "localCallsignAutoPendingName", "localCallsignRevision",

@@ -617,6 +617,10 @@ test("Quick Tour requires the demonstrated action on each page and resets on rep
       browserGamepads: () => null,
     })
     h.window.leqraGamepads = require(assetPath("gamepads.js"))
+    let drawn
+    h.window.leqraInfinityArt.hull = (tank) => {
+      drawn = { ...tank }
+    }
     vm.runInContext(source.slice(start, functionEnd(source, start)) + "\ninitIntroTour();", h.context)
     const key = (code) => dialog.emit("keydown", { code })
     const keyUp = (code) => h.window.emit("keyup", { code })
@@ -648,6 +652,20 @@ test("Quick Tour requires the demonstrated action on each page and resets on rep
     h.advance(4)
     assert.equal(next.disabled, true)
     if (touch) {
+      const before = { ...drawn }
+      const fire = { ...pointer, pointerId: 2 }
+      $("introTourFireButton").emit("pointerdown", fire)
+      h.window.emit("pointermove", { ...fire, clientY: 16 })
+      $("introTourStick").emit("pointerdown", pointer)
+      h.window.emit("pointermove", { ...pointer, clientX: 84 })
+      h.advance(16)
+      assert(drawn.x > before.x, "the tour joystick keeps moving during Fire aim")
+      assert.equal(drawn.y, before.y)
+      assert.equal(drawn.angle, -Math.PI / 2)
+      assert.equal(h.window.leqraNet.bodyHeading(drawn), 0)
+      assert.equal(h.bulletDraws.at(-1).length, 0, "center dragging stays silent in the tour")
+      h.window.emit("pointerup", pointer)
+      h.window.emit("pointerup", fire)
       $("introTourFireButton").emit("pointerdown", pointer)
       h.window.emit("pointerup", pointer)
     } else {
@@ -939,6 +957,45 @@ test("offline Infinity last Shield charge and last weapon charge refill immediat
   assert.equal(t.ammoEpoch, 1)
   h.infinity.close()
 })
+test("local online Infinity shots bypass remote interpolation for both pilots", () => {
+  const h = harness(undefined, true)
+  h.infinity.start("online", { localName: "Wingmate" })
+  const ws = h.sockets[0]
+  ws.receive({ type: "welcome", id: 1, localId: 2, seed: 0 })
+  const tanks = [1, 2, 3].map((id) => ({ id, hp: 1, x: 42, y: 42, angle: 0, spawnSerial: 1 }))
+  const packet = (tick, bullets) => ({ type: "state", tick, tanks, bullets, players: 3, leaderboard: [] })
+  ws.receive(packet(600, []))
+  const w = h.state()
+  h.window.testDraw(w, w.arrived, 0)
+  ws.receive(
+    packet(
+      602,
+      [1, 2, 3].map((owner) => ({
+        id: owner,
+        owner,
+        kind: "regular",
+        x: 62,
+        y: 42,
+        vx: 100,
+        vy: 0,
+        life: 1,
+        bounces: 0,
+      })),
+    ),
+  )
+  h.window.testDraw(w, w.arrived, 0)
+  assert.deepEqual(
+    Array.from(h.bulletDraws.at(-1), (b) => b.owner),
+    [1, 2],
+  )
+  h.window.testDraw(w, w.arrived + 20, 0.02)
+  for (const bullet of h.bulletDraws.at(-1)) assert.equal(bullet.x, 64)
+  ws.receive(packet(604, []))
+  h.window.testDraw(w, w.arrived, 0)
+  assert.ok(h.bulletDraws.at(-1).every((b) => b.owner !== 1 && b.owner !== 2))
+  h.infinity.close()
+})
+
 test("all online Infinity projectile kinds survive newest removal until playback reaches the terminal frame", () => {
   const h = harness(undefined, true)
   h.infinity.start("online")
@@ -3451,6 +3508,37 @@ test("Infinity pause borrows the actual scoreboard and restores its position and
   infinity.close()
   assert.equal(panel.parentElement, home)
   assert.equal(panel.nextSibling, next)
+})
+
+test("online Infinity refreshes unchanged held controls with new sequences for both local pilots", () => {
+  const { infinity, byID, sockets, advance } = harness(undefined, true)
+  infinity.start("online", { localName: "Wing" })
+  const [socket] = sockets
+  socket.receive({ type: "welcome", id: 1, localId: 2, seed: 0 })
+  socket.receive({
+    type: "state",
+    tanks: [
+      { id: 1, x: 42, y: 42, angle: 0, hp: 1 },
+      { id: 2, x: 210, y: 210, angle: 0, hp: 1 },
+    ],
+    bullets: [],
+    players: 2,
+    leaderboard: [],
+  })
+  for (const code of ["KeyW", "ArrowUp"]) byID("infiniteArena").emit("keydown", { code })
+  socket.sent.length = 0
+  advance(60)
+  for (const local of [false, true]) {
+    const inputs = socket.sent.filter((message) => message.type === "input" && !!message.local === local)
+    assert.ok(inputs.length >= 6, "held movement must keep sending heartbeats")
+    assert.ok(
+      inputs.every((input) => input.forward),
+      "the held control must stay active",
+    )
+    for (let i = 1; i < inputs.length; i++)
+      assert.equal(inputs[i].seq, inputs[i - 1].seq + 1, "heartbeats must survive server replay checks")
+  }
+  infinity.close()
 })
 
 test("online Infinity sends neutral pause heartbeats and clears the respawn hold on resume", () => {
@@ -6019,14 +6107,14 @@ test("Infinity Fire drag sends in-place aim without extra fire edges and resets 
   h.window.emit("pointermove", { ...start, clientX: 280 })
   let packet = socket.sent.at(-1)
   assert.equal(packet.fire, true)
-  assert.equal(packet.snapAim, true)
-  assert.equal(packet.aimOnly, true)
-  assert.equal(packet.stickX, -1)
+  assert.equal(packet.aimX, -1)
+  assert.equal(packet.aimOnly, false)
+  assert.equal(packet.stickX, 0)
   assert.equal(packet.stickY, 0)
   h.window.emit("pointerup", start)
   packet = socket.sent.at(-1)
   assert.equal(packet.fire, false)
-  assert.equal(packet.snapAim, true)
+  assert.equal(packet.aimX, -1)
   h.byID("infiniteFire").emit("pointerdown", start)
   h.window.emit("pointermove", { ...start, clientY: 570 })
   h.window.emit("pointercancel", start)
@@ -6059,7 +6147,7 @@ test("Infinity center Fire drag stays silent while a center tap sends one press 
   const from = socket.sent.length
   button.emit("pointerdown", start)
   h.window.emit("pointermove", { ...start, clientY: start.clientY - 40 })
-  assert.equal(socket.sent.at(-1).snapAim, true)
+  assert.equal(socket.sent.at(-1).aimY, -1)
   h.window.emit("pointerup", start)
   assert.equal(
     socket.sent.slice(from).some((packet) => packet.type === "input" && packet.fire),
@@ -6068,5 +6156,28 @@ test("Infinity center Fire drag stays silent while a center tap sends one press 
   button.emit("pointerdown", start)
   h.window.emit("pointerup", start)
   assert.equal(socket.sent.slice(from).filter((packet) => packet.type === "input" && packet.fire).length, 1)
+  button.emit("pointerdown", start)
+  h.elapse(180)
+  assert.equal(socket.sent.at(-1).fire, true, "holding the center sends held Fire")
+  h.window.emit("pointerup", start)
+  assert.equal(socket.sent.at(-1).fire, false)
+  const stick = h.byID("infiniteStickBase").getBoundingClientRect()
+  h.byID("infiniteStick").emit("pointerdown", {
+    pointerId: 36,
+    pointerType: "touch",
+    button: 0,
+    clientX: stick.left + stick.width / 2 + 24,
+    clientY: stick.top + stick.height / 2,
+  })
+  button.emit("pointerdown", start)
+  h.window.emit("pointermove", { ...start, clientY: start.clientY - 40 })
+  const driving = socket.sent.at(-1)
+  assert.equal(driving.aimOnly, false)
+  assert.equal(driving.snapAim, undefined)
+  assert(driving.stickX > 0.1, "eastward joystick movement reaches the server")
+  assert.equal(driving.stickY, 0)
+  assert.equal(driving.aimY, -1, "the turret still aims north")
+  h.window.emit("pointerup", start)
+  h.window.emit("pointerup", { pointerId: 36 })
   h.infinity.close()
 })

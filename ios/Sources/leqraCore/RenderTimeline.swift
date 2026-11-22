@@ -547,6 +547,7 @@ public final class RenderTimeline {
             tank.track = first.track + (second.track - first.track) * alpha
             let delta = atan2(sin(second.angle - first.angle), cos(second.angle - first.angle))
             tank.angle = first.angle + delta * alpha
+            TankMovement.blendBody(tank: &tank, from: first, to: second, fraction: alpha)
             if span > 0, span <= 0.1 {
                 let curve: TankCurve
                 if let cached = tankCurves[current.id] {
@@ -583,11 +584,14 @@ public final class RenderTimeline {
             }
             return tank
         }
-        // Birth and despawn use the same presentation clock. Filtering this
+        // Remote birth and despawn use the same presentation clock. Filtering this
         // delayed sample through newest-state membership erases a projectile
         // that hit before the playhead reaches its birth, even a visible kill.
         let visibleBullets = alpha < 1 ? a.state.bullets : b.state.bullets
-        result.bullets = visibleBullets.compactMap { visible in
+        let own = { (owner: Int) in
+            !newest.state.spectating && (owner == self.localID || owner == self.secondaryLocalID)
+        }
+        result.bullets = visibleBullets.filter { !own($0.owner) }.compactMap { visible in
             guard let first = oldBullets[visible.id], let second = newBullets[visible.id] else {
                 return visible
             }
@@ -617,9 +621,22 @@ public final class RenderTimeline {
             bullet.vy = first.vy + (second.vy - first.vy) * alpha
             return bullet
         }
+        let geometry =
+            newest.state.world.map { world in
+                if projectileWorld != world {
+                    projectileWorld = world
+                    projectileMaze = InfiniteMaze(world: world)
+                }
+                return projectileMaze!
+            } ?? maze
+        result.bullets += newest.state.bullets.filter { own($0.owner) }.map {
+            ProjectileRicochetPath.live($0, dt: renderNow - lastArrival, maze: geometry)
+        }
         cannonFlights.append(
             to: &result.bullets, tick: playhead * 60, now: renderNow,
-            authorityTick: Double(newest.state.tick), localID: localID, secondaryLocalID: secondaryLocalID)
+            authorityTick: Double(newest.state.tick) + min(0.075, max(0, renderNow - lastArrival)) * 60,
+            localID: newest.state.spectating ? -1 : localID,
+            secondaryLocalID: newest.state.spectating ? nil : secondaryLocalID)
         result.effects = cannonFlights.effects(result.effects)
         return result
     }

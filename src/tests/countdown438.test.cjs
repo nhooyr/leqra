@@ -423,7 +423,7 @@ test("creating a fresh local room preserves the countdown sequence for the next 
   s.document.body.classList.remove = () => {}
   s.document.documentElement = { style: { removeProperty() {} } }
   s.localRoom.nextMember = 0
-  vm.runInContext(declaration("createLocalRoom"), s)
+  vm.runInContext(declaration("savedPilotColor") + declaration("createLocalRoom"), s)
   s.createLocalRoom()
   assert.equal(s.localRoom.countdownSerial, serial)
   s.startMatch()

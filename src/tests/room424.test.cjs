@@ -150,6 +150,7 @@ function boot(extra = {}) {
     "makeRoomPlayerRow",
     "changeSeat",
     "addRoomSeat",
+    "savedPilotColor",
     "cleanPilotName",
     "validatePreset",
     "setPlayerSpectating",

@@ -1,5 +1,15 @@
 ## Changelog
 
+## v5.8.2
+
+- Recover registered accounts directly from the admin table with a copyable replacement key, preserving callsigns and scores while revoking the old key.
+- Listen on both IPv4 and IPv6 loopback addresses when the admin host is `localhost` (the default), and log each bound address. Explicit IP settings keep a single listener.
+- Show local online projectiles on the current timeline instead of delaying them behind the turret, while keeping remote motion smooth.
+- Give newly generated P1/P2 names distinct random colors, including first launch, while avoiding the other pilot and room bots. Keep the current color if no unused color remains.
+- Preserve independent turret aim when pressing the joystick, and keep overlaid touch controls from being interpreted as near-tank aiming.
+- Aim the turret independently from the tank body with Fire while driving with the joystick on mobile web, iOS, and Android. Hold Fire’s center to shoot continuously, or drag from it to aim without firing.
+- Fire projectiles and lasers along the turret barrel immediately after aiming, including online shot previews.
+
 ## v5.8.1
 
 - Move the Fire crosshair with touch aiming and recenter it on release across web, iOS, and Android.

@@ -1870,7 +1870,7 @@ class MainActivity : Activity() {
         panel.add(
             label(
                 this,
-                "Drag the left stick to drive and aim. Touch near your tank to rotate toward that point without moving. Drag the center of Fire to aim without shooting. Tap the center to shoot on release, or hold the outer area for continuous fire. Pickups equip automatically.",
+                "Drag the left stick to drive and aim. Touch near your tank to rotate toward that point without moving. Drag the center of Fire to aim without shooting. Tap to shoot, or hold still to fire continuously. Drive with the joystick while aiming the turret independently with Fire. Pickups equip automatically.",
                 13f,
             ),
         )
@@ -3373,7 +3373,7 @@ class MainActivity : Activity() {
         panel.add(
             label(
                 this,
-                "Drag the joystick to drive and aim. Touch near the tank to aim in place. Drag the center of Fire to aim without shooting. Tap it to shoot, or hold the outer area for continuous fire.",
+                "Drag the joystick to drive and aim. Touch near the tank to aim in place. Drag the center of Fire to aim without shooting. Tap to shoot, or hold still to fire continuously. Drive with the joystick while aiming the turret independently with Fire.",
                 12f,
                 soft,
             ),
@@ -4125,7 +4125,11 @@ class MainActivity : Activity() {
             arena.clearDirectAim()
         val touch = if (local) null else arena.input
         val mouse = if (keyboardSeat) arena.mouseInput() else null
-        if (touch != null) controls.fire = controls.fire || touch.fire
+        if (touch != null) {
+            controls.fire = controls.fire || touch.fire
+            controls.aimX = touch.aimX
+            controls.aimY = touch.aimY
+        }
         if (mouse != null) controls.fire = controls.fire || mouse.fire
         if (touch != null && hypot(touch.stickX, touch.stickY) > .1) {
             controls.stickX = touch.stickX

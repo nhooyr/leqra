@@ -44,6 +44,7 @@ function localCombat(tick, fire, wallList = []) {
     heldAction: (_, action) => fire && action === "fire",
     primaryFireHeld: () => fire,
     firePresses: new Set(),
+    fireDrag: { active: false },
     directAim: { active: false },
     mouseAim: { firePressed: false },
     mouseAimHeading: () => null,

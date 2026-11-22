@@ -1295,7 +1295,7 @@ func (s *infiniteServer) AdminLeaderboard() []leaderboardAdminEntry {
 	rows := make([]leaderboardAdminEntry, 0, len(a.publicEntries))
 	for id, e := range a.publicEntries {
 		if e.listed {
-			rows = append(rows, leaderboardAdminEntry{ID: id, Name: e.Name, Score: e.Score, Bot: e.Bot, Connected: connected[id]})
+			rows = append(rows, leaderboardAdminEntry{ID: id, Name: e.Name, Score: e.Score, Bot: e.Bot, Connected: connected[id], hash: s.publicScoreOwners[id]})
 		}
 	}
 	slices.SortFunc(rows, func(a, b leaderboardAdminEntry) int {

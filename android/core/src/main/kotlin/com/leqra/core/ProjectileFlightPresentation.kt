@@ -49,7 +49,13 @@ internal class ProjectileFlightPresentation {
         observationCapacity = 1024
     }
 
-    fun accept(effects: List<ArenaEffect>, playhead: Double, actors: Int = 1) {
+    fun accept(
+        effects: List<ArenaEffect>,
+        playhead: Double,
+        actors: Int = 1,
+        localIDs: Set<Int> = emptySet(),
+        localPlayhead: Double = playhead,
+    ) {
         capacity = max(capacity, combatPresentationCapacity(actors))
         observationCapacity =
             max(observationCapacity, actors.coerceIn(1, 256) * 128).coerceAtMost(32768)
@@ -59,11 +65,12 @@ internal class ProjectileFlightPresentation {
             if (effect.id <= baseline) continue
             val path = effect.flight ?: continue
             if (!valid(path) || flights.containsKey(path.id)) continue
+            val clock = if (path.owner in localIDs) localPlayhead else playhead
             val start = path.startTick / 60
             val end = path.endTick / 60
             val observed = path.id in shown
-            val grace = !observed && (end - start < .05 || playhead >= end)
-            val visualStart = if (grace) max(start, playhead) else start
+            val grace = !observed && (end - start < .05 || clock >= end)
+            val visualStart = if (grace) max(start, clock) else start
             // A published projectile can already be ahead of its final wire segment.
             // Keep its visual clock moving forward, then draw the exact contact once.
             val resumeTick =
@@ -84,10 +91,10 @@ internal class ProjectileFlightPresentation {
                             tick = a.tick + (b.tick - a.tick) * f
                         }
                     }
-                    max(tick, (playhead * 60).coerceIn(path.startTick, path.endTick))
+                    max(tick, (clock * 60).coerceIn(path.startTick, path.endTick))
                 } ?: path.startTick
             flights[path.id] =
-                if (observed) Flight(effect, path, playhead, max(playhead, end), resumeTick)
+                if (observed) Flight(effect, path, clock, max(clock, end), resumeTick)
                 else Flight(effect, path, visualStart, if (grace) visualStart + .05 else end)
             if (flights.size > capacity)
                 flights.entries.iterator().let {
@@ -102,6 +109,8 @@ internal class ProjectileFlightPresentation {
         effects: List<ArenaEffect>,
         playhead: Double,
         canComplete: ProjectileCompletion = ProjectileCompletion { true },
+        localIDs: Set<Int> = emptySet(),
+        localPlayhead: Double = playhead,
     ): Image {
         if (flights.isEmpty()) {
             for (bullet in bullets) remember(bullet)
@@ -117,9 +126,10 @@ internal class ProjectileFlightPresentation {
         val poses = HashMap<Int, ArenaBullet>()
         while (iterator.hasNext()) {
             val (_, flight) = iterator.next()
-            if (playhead < flight.start) continue
+            val clock = if (flight.path.owner in localIDs) localPlayhead else playhead
+            if (clock < flight.start) continue
             if (
-                playhead >= flight.end &&
+                clock >= flight.end &&
                     flight.endpointShown &&
                     canComplete.canComplete(flight.path.id)
             ) {
@@ -135,7 +145,7 @@ internal class ProjectileFlightPresentation {
             }
             val alpha =
                 if (flight.end > flight.start)
-                    ((playhead - flight.start) / (flight.end - flight.start)).coerceIn(0.0, 1.0)
+                    ((clock - flight.start) / (flight.end - flight.start)).coerceIn(0.0, 1.0)
                 else 1.0
             val tick =
                 flight.sampleStartTick + (flight.path.endTick - flight.sampleStartTick) * alpha
@@ -170,7 +180,7 @@ internal class ProjectileFlightPresentation {
                     bounces = index,
                 )
             flight.shown = true
-            if (playhead >= flight.end) flight.endpointShown = true
+            if (clock >= flight.end) flight.endpointShown = true
         }
         for (bullet in bullets) {
             if (bullet.id in completedIDs) continue
@@ -178,7 +188,11 @@ internal class ProjectileFlightPresentation {
                 poses[bullet.id]?.let {
                     output += it
                     supplied += bullet.id
-                } ?: run { if (playhead < flights.getValue(bullet.id).start) output += bullet }
+                }
+                    ?: run {
+                        val clock = if (bullet.owner in localIDs) localPlayhead else playhead
+                        if (clock < flights.getValue(bullet.id).start) output += bullet
+                    }
             } else output += bullet
         }
         for ((id, bullet) in poses) if (id !in supplied) output += bullet

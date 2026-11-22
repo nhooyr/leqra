@@ -59,18 +59,15 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     private var fireTouchX = 0f
     private var fireTouchY = 0f
     private var fireTouchCenter = false
+    private var fireTouchFiring = false
+    private var fireTouchDragged = false
+    private var fireHoldTask: Runnable? = null
     private var fireCrosshairX = 0f
     private var fireCrosshairY = 0f
     val input: GameInput
         get() =
             fireAim?.let { (x, y) ->
-                touchControls.copy(
-                    stickX = x,
-                    stickY = y,
-                    touchAim = true,
-                    aimOnly = true,
-                    snapAim = true,
-                )
+                touchControls.copy(aimX = x, aimY = y)
             } ?: touchControls
 
     var renderedFrames: Long = 0
@@ -438,7 +435,14 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         guideReady = false
     }
 
+    private fun cancelFireHold() {
+        fireHoldTask?.let(::removeCallbacks)
+        fireHoldTask = null
+    }
+
     fun resetControls() {
+        cancelFireHold()
+        fireTouchFiring = false
         clearMouseControls()
         aimPointer = -1
         stickPointer = -1
@@ -962,7 +966,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                     canvas.drawArc(-24f, -24f, 24f, 24f, i * 72f, 61.2f, false, paint)
                 }
         }
-        canvas.rotate((tank.angle * 180 / PI).toFloat())
+        canvas.rotate((tank.movementAngle * 180 / PI).toFloat())
         if (tank.speedTime > 0 && tank.hp > 0) {
             stroke(ArenaPalette.power("speed"), 2f)
             for (i in 0 until tank.speedStacks.coerceIn(1, 5)) for (side in intArrayOf(-1, 1)) {
@@ -978,6 +982,8 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         drawBitmap(canvas, if (tank.hp > 0) art.hull(tank.colorIndex, phase) else art.wreck(), 24f)
         if (tank.hp > 0) {
             canvas.save()
+            canvas.rotate(((tank.angle - tank.movementAngle) * 180 / PI).toFloat())
+            canvas.save()
             val preview =
                 if (tank.id == localID) previewRecoil
                 else if (tank.id == localID2) localPreviewRecoil else 0.0
@@ -991,6 +997,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             if (retraction < 21) drawBitmap(canvas, art.barrel(tank.colorIndex), 32f)
             canvas.restore()
             drawBitmap(canvas, art.turret(tank.colorIndex), 12f)
+            canvas.restore()
             if (tank.ghostTime > 0 && !infinity) {
                 stroke(ArenaPalette.power("ghost"), 1.6f)
                 paint.pathEffect = ghostDash
@@ -1793,6 +1800,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                     nearOnly && distance > max(64f, 51 * aimTankZoom)
             )
                 return false
+            fireAim = null
             touchControls.stickX = (dx / distance).toDouble()
             touchControls.stickY = (dy / distance).toDouble()
             touchControls.aimOnly = true
@@ -1811,7 +1819,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                 val overlaidControl =
                     !controlsLayout &&
                         (hypot(x - stickX, y - stickY) <= 48f ||
-                            showFireControl && hypot(x - fireX, y - fireY) <= 45.5f)
+                            showFireControl && hypot(x - fireX, y - fireY) <= 56f)
                 if (aimPointer < 0 && !overlaidControl && aim(index, nearOnly = true)) {
                     aimPointer = pointer
                 } else if (
@@ -1832,10 +1840,27 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                     firePointer = pointer
                     fireTouchX = x
                     fireTouchY = y
-                    fireAim = null
+                    fireTouchDragged = false
                     fireTouchCenter = hypot(x - fireX, y - fireY) <= 22f
-                    touchControls.fire = !fireTouchCenter
-                    fireHeld = !fireTouchCenter
+                    cancelFireHold()
+                    fireTouchFiring = !fireTouchCenter
+                    touchControls.fire = fireTouchFiring
+                    fireHeld = fireTouchFiring
+                    if (fireTouchCenter) {
+                        val heldPointer = pointer
+                        fireHoldTask =
+                            Runnable {
+                                fireHoldTask = null
+                                if (firePointer == heldPointer && !fireTouchDragged) {
+                                    fireTouchFiring = true
+                                    touchControls.fire = true
+                                    fireHeld = true
+                                    onInput?.invoke(input.copy())
+                                    invalidate()
+                                }
+                            }
+                                .also { postDelayed(it, 180) }
+                    }
                 }
             }
             MotionEvent.ACTION_MOVE -> {
@@ -1848,6 +1873,8 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                     val dy = event.getY(fire) / density - fireTouchY
                     val distance = hypot(dx, dy)
                     if (distance.isFinite() && distance >= 8f) {
+                        cancelFireHold()
+                        fireTouchDragged = true
                         fireAim = (dx / distance).toDouble() to (dy / distance).toDouble()
                         val scale = min(1f, 24f / distance)
                         fireCrosshairX = dx * scale
@@ -1868,16 +1895,9 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                     }
                 }
                 if (pointer == firePointer) {
-                    val tap = fireTouchCenter && fireAim == null
-                    fireAim?.let { (x, y) ->
-                        if (stickPointer < 0 && aimPointer < 0) {
-                            touchControls.stickX = x
-                            touchControls.stickY = y
-                            touchControls.aimOnly = true
-                            touchControls.snapAim = true
-                        }
-                    }
-                    fireAim = null
+                    cancelFireHold()
+                    val tap = fireTouchCenter && !fireTouchDragged && !fireTouchFiring
+                    fireTouchFiring = false
                     firePointer = -1
                     fireCrosshairX = 0f
                     fireCrosshairY = 0f

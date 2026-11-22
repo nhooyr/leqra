@@ -192,6 +192,7 @@ function boot(storage = new Map(), touchUI = false) {
     "sendRoomSetupRequest",
     "startInfinity",
     "createLocalRoom",
+    "savedPilotColor",
   ])
     vm.runInContext(declaration(name), s)
   s.localRoom.rules = s.loadLocalRoomRules()

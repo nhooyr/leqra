@@ -3,6 +3,43 @@ import Foundation
 /// Read-only presentation of a proven authoritative ricochet. Guided/dragged
 /// projectiles and mismatching endpoints retain the conservative held pose.
 struct ProjectileRicochetPath {
+    static func live(_ source: ArenaBullet, dt: Double, maze: InfiniteMaze?) -> ArenaBullet {
+        var bullet = source
+        var remaining = min(0.075, max(0, dt), max(0, source.life))
+        if bullet.kind == "grenade" {
+            let drag = PracticeArena.grenadeDragFactor(
+                lifeBefore: bullet.life, lifeAfter: bullet.life - remaining)
+            bullet.vx *= drag
+            bullet.vy *= drag
+        }
+        let radius: Double =
+            switch source.kind {
+            case "rapid": 3.5 / 3
+            case "cannon": 14
+            case "homing": 5
+            case "grenade": 6
+            default: 3.5
+            }
+        let nudge = maze?.world == nil ? 0.12 : 0.08
+        for _ in 0..<4 where remaining > 1e-8 {
+            let hit = maze?.projectileHit(
+                kind: bullet.kind, x: bullet.x, y: bullet.y,
+                dx: bullet.vx * remaining, dy: bullet.vy * remaining, radius: radius)
+            let elapsed = remaining * (hit?.fraction ?? 1)
+            bullet.x += bullet.vx * elapsed
+            bullet.y += bullet.vy * elapsed
+            bullet.life -= elapsed
+            guard let hit else { break }
+            bullet.x += hit.nx * nudge
+            bullet.y += hit.ny * nudge
+            if hit.nx != 0 { bullet.vx = -bullet.vx }
+            if hit.ny != 0 { bullet.vy = -bullet.vy }
+            bullet.bounces += 1
+            remaining -= elapsed
+        }
+        return bullet
+    }
+
     private struct Segment {
         var start: Double
         var end: Double

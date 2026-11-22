@@ -278,6 +278,8 @@ class NativeNetworkClient(
                 .put("touchAim", input.touchAim)
                 .put("aimOnly", input.aimOnly)
                 .put("snapAim", input.snapAim)
+                .put("aimX", if (paused) 0.0 else input.aimX)
+                .put("aimY", if (paused) 0.0 else input.aimY)
         if (infinity) {
             command.put("paused", paused)
             if (local) command.put("local", true)

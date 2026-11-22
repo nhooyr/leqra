@@ -18,6 +18,25 @@
     const distance = Math.hypot(dx, dy)
     return Number.isFinite(distance) && distance >= 8 ? { x: dx / distance, y: dy / distance } : null
   }
+  function fireAimInput(x, y) {
+    return { aimX: x, aimY: y }
+  }
+  function bodyHeading(tank) {
+    return tank.independentAim ? tank.bodyAngle || 0 : tank.angle
+  }
+  function blendBody(result, first, second, fraction) {
+    result.independentAim = !!(first.independentAim || second.independentAim)
+    result.bodyAngle = result.independentAim
+      ? bodyHeading(first) + delta(bodyHeading(first), bodyHeading(second)) * fraction
+      : 0
+    return result
+  }
+  function applyTurretAim(tank, input) {
+    const body = tank.angle
+    tank.independentAim = Math.hypot(input.aimX || 0, input.aimY || 0) > 0.1
+    tank.bodyAngle = tank.independentAim ? body : 0
+    if (tank.independentAim) tank.angle = Math.atan2(input.aimY || 0, input.aimX || 0)
+  }
   function fireAimCenter(dx, dy) {
     return Math.hypot(dx, dy) <= 22
   }
@@ -202,6 +221,8 @@
       !!a.aimOnly === !!b.aimOnly &&
       !!a.touchAim === !!b.touchAim &&
       !!a.snapAim === !!b.snapAim &&
+      Math.abs((a.aimX || 0) - (b.aimX || 0)) < 0.001 &&
+      Math.abs((a.aimY || 0) - (b.aimY || 0)) < 0.001 &&
       Math.abs(a.stickX - b.stickX) < 0.001 &&
       Math.abs(a.stickY - b.stickY) < 0.001
     )
@@ -236,6 +257,7 @@
     }
     const x = t.x,
       y = t.y
+    t.angle = bodyHeading(t)
     const stacks = movementStacks(t)
     const speedScale = 1 + 0.65 * stacks,
       turnScale = 1 + 0.25 * stacks
@@ -256,6 +278,7 @@
       Math.cos(t.angle) * 128 * speedScale * throttle * dt,
       Math.sin(t.angle) * 128 * speedScale * throttle * dt,
     )
+    applyTurretAim(t, input)
     t.vx = dt ? (t.x - x) / dt : 0
     t.vy = dt ? (t.y - y) / dt : 0
     t.track = (t.track || 0) + Math.hypot(t.x - x, t.y - y)
@@ -305,7 +328,7 @@
       moveRenderPose(result, (next.x - t.x) * f, (next.y - t.y) * f, moveTank)
       result.angle = t.angle + delta(t.angle, next.angle) * f
       result.track = (t.track || 0) + ((next.track || 0) - (t.track || 0)) * f
-      return result
+      return blendBody(result, t, next, f)
     }
     const future = copy(next)
     advance(future, step)
@@ -349,7 +372,7 @@
       f,
     )
     result.track = (t.track || 0) + ((next.track || 0) - (t.track || 0)) * f
-    return result
+    return blendBody(result, t, next, f)
   }
   function visualMove(t, input, dt, moveTank, step = STEP, previous) {
     return presentation(t, dt, step, (pose, span) => move(pose, input, span, moveTank), moveTank, previous)
@@ -1396,6 +1419,7 @@
           angle: a.angle + delta(a.angle, b.angle) * f,
           track: a.track + (b.track - a.track) * f,
         }
+      blendBody(t, a, b, f)
       if (frame.extrapolate <= 0 && frame.a !== frame.b) {
         const span = (frame.b.netTime - frame.a.netTime) / 1000,
           key = frame.a.tick + ":" + frame.b.tick + ":" + id
@@ -1680,6 +1704,10 @@
   return Object.freeze({
     fireAimDirection,
     fireAimCenter,
+    fireAimInput,
+    bodyHeading,
+    blendBody,
+    applyTurretAim,
     fireAimOffset,
     barrelRetraction,
     wallLaunch,

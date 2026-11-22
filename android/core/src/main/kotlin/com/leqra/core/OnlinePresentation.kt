@@ -78,6 +78,7 @@ class OnlinePresentation(
     private var clock: Double? = null
     private var playbackRate = 1.0
     private var lastArrival = 0.0
+    private var renderNow = 0.0
     private var context: List<Long?>? = null
     private var pair: Pair<Long, Long>? = null
     private var oldTanks = emptyMap<Int, ArenaTank>()
@@ -448,6 +449,8 @@ class OnlinePresentation(
                 snapshot.effects,
                 clock ?: snapshot.tick / 60.0 - .085,
                 snapshot.tanks.size,
+                if (snapshot.spectating) emptySet() else setOfNotNull(primary.id, secondary?.id),
+                snapshot.tick / 60.0,
             )
             contacts.accept(
                 snapshot.effects,
@@ -487,6 +490,7 @@ class OnlinePresentation(
         this.maze = maze ?: this.maze
         val newest = latest ?: return null
         val elapsed = if (dt.isFinite()) dt.coerceIn(0.0, .1) else 0.0
+        renderNow = now
         stale = now - lastArrival > 2.5
         if (
             newest.spectating ||
@@ -520,6 +524,7 @@ class OnlinePresentation(
                 state.result == null && state.phase !in listOf("roundOver", "matchOver")
         )
             return null
+        renderNow += if (dt.isFinite()) dt.coerceIn(0.0, .1) else 0.0
         return finishPresentation(
             interpolated(if (dt.isFinite()) dt.coerceIn(0.0, .1) else 0.0, null),
         )
@@ -613,6 +618,11 @@ class OnlinePresentation(
                         x = first.x + (second.x - first.x) * alpha,
                         y = first.y + (second.y - first.y) * alpha,
                         angle = first.angle + delta * alpha,
+                        independentAim = first.independentAim || second.independentAim,
+                        bodyAngle =
+                            first.movementAngle +
+                                TankMovement.angleDelta(second.movementAngle, first.movementAngle) *
+                                    alpha,
                         track = first.track + (second.track - first.track) * alpha,
                     )
                 if (span > 0 && span <= .1) {
@@ -650,22 +660,34 @@ class OnlinePresentation(
                 tank
             }
         val visible = if (alpha < 1) a.state.bullets else b.state.bullets
-        result.bullets = visible.map { bullet ->
-            val first = oldBullets[bullet.id]
-            val second = newBullets[bullet.id]
-            if (first == null || second == null) bullet
-            else if (first.bounces != second.bounces) {
-                if (!ricochetPaths.containsKey(bullet.id))
-                    ricochetPaths[bullet.id] = RicochetPath.between(first, second, span, maze)
-                ricochetPaths[bullet.id]?.sample(second, first, alpha) ?: bullet
-            } else
-                second.copy(
-                    x = first.x + (second.x - first.x) * alpha,
-                    y = first.y + (second.y - first.y) * alpha,
-                    vx = first.vx + (second.vx - first.vx) * alpha,
-                    vy = first.vy + (second.vy - first.vy) * alpha,
-                )
-        }
+        fun own(owner: Int) =
+            !newest.state.spectating && (owner == primary.id || owner == secondary?.id)
+        result.bullets =
+            visible
+                .filter { !own(it.owner) }
+                .map { bullet ->
+                    val first = oldBullets[bullet.id]
+                    val second = newBullets[bullet.id]
+                    if (first == null || second == null) bullet
+                    else if (first.bounces != second.bounces) {
+                        if (!ricochetPaths.containsKey(bullet.id))
+                            ricochetPaths[bullet.id] =
+                                RicochetPath.between(first, second, span, maze)
+                        ricochetPaths[bullet.id]?.sample(second, first, alpha) ?: bullet
+                    } else
+                        second.copy(
+                            x = first.x + (second.x - first.x) * alpha,
+                            y = first.y + (second.y - first.y) * alpha,
+                            vx = first.vx + (second.vx - first.vx) * alpha,
+                            vy = first.vy + (second.vy - first.vy) * alpha,
+                        )
+                }
+        result.bullets +=
+            newest.state.bullets
+                .filter { own(it.owner) }
+                .map {
+                    RicochetPath.live(it, renderNow - lastArrival, maze)
+                }
         return result
     }
 
@@ -677,6 +699,11 @@ class OnlinePresentation(
                 result.effects,
                 playhead,
                 contacts::canCompleteProjectile,
+                localIDs =
+                    if (result.spectating) emptySet() else setOfNotNull(primary.id, secondary?.id),
+                localPlayhead =
+                    (latest?.tick ?: result.tick) / 60.0 +
+                        (renderNow - lastArrival).coerceIn(0.0, .075),
             )
         val contactImage =
             contacts.render(result.tanks, flightImage.effects, playhead, completedFlights) {

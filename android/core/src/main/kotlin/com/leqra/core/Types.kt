@@ -2,6 +2,15 @@ package com.leqra.core
 
 // Native protocol DTOs. Gameplay fields retain server defaults.
 object GamePalette {
+    fun randomPilotColor(
+        current: Int,
+        avoiding: Collection<Int>,
+        random: kotlin.random.Random = kotlin.random.Random.Default,
+    ): Int {
+        val choices = colors.indices.filter { it != current && it !in avoiding }
+        return choices.randomOrNull(random) ?: current
+    }
+
     val colors =
         listOf(
             "#d2f65a",
@@ -42,6 +51,8 @@ data class GameInput(
     var touchAim: Boolean = true,
     var aimOnly: Boolean = false,
     var snapAim: Boolean = false,
+    var aimX: Double = 0.0,
+    var aimY: Double = 0.0,
 )
 
 data class LocalPilot(val name: String, val colorIndex: Int, val team: Int = 0)
@@ -104,7 +115,12 @@ data class ArenaTank(
     var killedByColor: String = "",
     var ammoEpoch: Long = 0,
     var grenadeEpoch: Long? = null,
+    var bodyAngle: Double = 0.0,
+    var independentAim: Boolean = false,
 ) {
+    val movementAngle: Double
+        get() = if (independentAim) bodyAngle else angle
+
     /** The server supplies the actual tier; a callsign cannot create a warning. */
     val isGodlikeBot: Boolean
         get() = bot && difficulty == "godlike"

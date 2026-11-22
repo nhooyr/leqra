@@ -85,6 +85,31 @@ function boot() {
   return s
 }
 
+test("immediate online fire uses the new turret aim before the next movement frame", () => {
+  for (const power of [null, "rapid", "scatter", "homing", "grenade", "cannon", "laser"]) {
+    const s = boot()
+    for (const tank of [s.tanks[0], s.online.predictor.state, s.online.snapshots[0].tankMap.get(0)])
+      Object.assign(tank, { power, charges: 3, machineRounds: 180, angle: 0 })
+    s.previewOnlineFire(false, { fire: true, aimX: 0, aimY: -1 }, s.now)
+    if (power === "laser") {
+      const beam = s.traces[0]
+      assert.ok(Math.abs(beam.x - 84) < 1e-8, "the laser must begin along the north-facing turret")
+      assert.ok(beam.y < 168)
+      assert.ok(Math.abs(beam.endX - 84) < 1e-8)
+      assert.ok(beam.endY < beam.y)
+    } else {
+      const volley = [...s.online.shots.previews.values()][0]
+      assert.ok(volley?.shells.length, power)
+      for (const shell of volley.shells) {
+        assert.ok(shell.vy < 0 && Math.abs(shell.vx) < Math.abs(shell.vy) * 0.25, power)
+        assert.ok(shell.y < 168, "projectiles must emerge along the turret barrel")
+        if (power !== "scatter") assert.equal(shell.x, 84)
+      }
+    }
+    assert.equal(s.online.predictor.state.angle, 0, "previewing must not advance the simulation")
+  }
+})
+
 test("late authoritative laser replaces an expired prediction even while its sound is deduplicated", () => {
   for (const delay of [0.24, 0.6])
     for (const phase of ["playing", "roundOver"]) {

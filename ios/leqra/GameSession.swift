@@ -83,7 +83,11 @@ final class GameSession: ObservableObject {
     @Published var localRules = RoomRules.localDefaults()
     @Published var localTeam = 0
     @Published var localP2Enabled = false
-    @Published var localP2ColorIndex = 1
+    @Published var localP2ColorIndex =
+        (NativePreferences.current.object(forKey: "localTankColor") as? Int).map(GamePalette.index) ?? 1
+    {
+        didSet { NativePreferences.current.set(localP2ColorIndex, forKey: "localTankColor") }
+    }
     @Published var localP2Team = 0
     @Published var localBots: [LocalBot] = []
     @Published var roomName = ""
@@ -288,6 +292,8 @@ final class GameSession: ObservableObject {
         }
         roomClient.onEvent = { [weak self] event in self?.receive(event, arena: false) }
         arenaClient.onEvent = { [weak self] event in self?.receive(event, arena: true) }
+        if NativePreferences.current.object(forKey: "tankColor") == nil { randomizePilotColor(seat: 0) }
+        if NativePreferences.current.object(forKey: "localTankColor") == nil { randomizePilotColor(seat: 1) }
         if directAimProbe {
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -540,6 +546,18 @@ final class GameSession: ObservableObject {
         return (candidate.publicToken, true)
     }
 
+    private func randomizePilotColor(seat: Int) {
+        let other = seat == 0 ? localP2ColorIndex : colorIndex
+        let bots =
+            room?.players.filter { $0.kind == "bot" }.map {
+                $0.colorIndex ?? GamePalette.colors.firstIndex(of: $0.color) ?? GamePalette.index($0.id)
+            }
+            ?? localBots.map(\.colorIndex)
+        let current = seat == 0 ? colorIndex : localP2ColorIndex
+        let next = GamePalette.randomPilotColor(current: current, avoiding: bots + [other])
+        if seat == 0 { colorIndex = next } else { localP2ColorIndex = next }
+    }
+
     func generateRandomCallsign(seat: Int = 0) {
         Task { @MainActor [weak self] in
             await self?.generateCallsigns(seats: [seat == 1 ? 1 : 0], automatic: false)
@@ -669,6 +687,7 @@ final class GameSession: ObservableObject {
                 }
                 applyingGeneratedCallsign = true
                 if generated.seat == 1 { localCallsign = generated.name } else { callsign = generated.name }
+                if !automatic { randomizePilotColor(seat: generated.seat) }
                 applyingGeneratedCallsign = false
                 committedCallsigns[generated.seat] = generated.name
                 if !automatic {
@@ -1389,7 +1408,9 @@ final class GameSession: ObservableObject {
         } else {
             team = 0
         }
-        localBots.append(LocalBot(id: id, name: name, colorIndex: (id - 1) % 8, team: team))
+        let usedColors = Set([colorIndex, localP2ColorIndex] + localBots.map(\.colorIndex))
+        let color = GamePalette.colors.indices.first { !usedColors.contains($0) } ?? (id - 1) % 8
+        localBots.append(LocalBot(id: id, name: name, colorIndex: color, team: team))
     }
 
     var canAddLocalP2: Bool {
@@ -3106,8 +3127,9 @@ final class GameSession: ObservableObject {
         {
             let alive = snapshot.tanks.filter { $0.id != localID && $0.hp > 0 }.count
             let standard = snapshot.bullets.filter { $0.owner == tank.id && $0.kind.isEmpty }.count
+            let shot = snapshot.bullets.first { $0.owner == tank.id }
             scene.view?.superview?.accessibilityValue =
-                "x=\(tank.x),y=\(tank.y),angle=\(tank.angle),screenX=\(point.x),screenY=\(point.y),grenades=\(tank.grenades),charges=\(tank.charges),bullets=\(snapshot.bullets.count),standardBullets=\(standard),ammoEpoch=\(tank.ammoEpoch),targets=\(alive),score=\(tank.score),\(scene.controlLabelProbe)"
+                "x=\(tank.x),y=\(tank.y),angle=\(tank.angle),bodyAngle=\(tank.movementAngle),screenX=\(point.x),screenY=\(point.y),grenades=\(tank.grenades),charges=\(tank.charges),bullets=\(snapshot.bullets.count),standardBullets=\(standard),shotX=\(shot?.x ?? 0),shotY=\(shot?.y ?? 0),shotVX=\(shot?.vx ?? 0),shotVY=\(shot?.vy ?? 0),ammoEpoch=\(tank.ammoEpoch),targets=\(alive),score=\(tank.score),\(scene.controlLabelProbe)"
         }
         if ProcessInfo.processInfo.arguments.contains("--probe-local-p2-input") {
             let primary = snapshot.tanks.first { $0.id == localID }

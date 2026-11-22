@@ -77,6 +77,7 @@ func TestGhostWallOverlapStartsReflectionAtIncomingFace(t *testing.T) {
 			g := battle(2)
 			pilot, target := g.Tanks[0], g.Tanks[1]
 			pilot.X, pilot.Y, pilot.Angle = 248-gap, 200, 0
+			pilot.BodyAngle, pilot.IndependentAim = math.Pi/2, true
 			target.X, target.Y = 500, 300
 			g.World.Walls = []Wall{{X: 248, Y: 84, W: 8, H: 672}}
 			g.grantPower(pilot, "ghost")
@@ -93,6 +94,7 @@ func TestGhostWallOverlapStartsReflectionAtIncomingFace(t *testing.T) {
 			}
 			a, p, other, wall := wallLaunchInfinityArena()
 			p.X = wall.X - gap
+			p.BodyAngle, p.IndependentAim = math.Pi/2, true
 			other.X, other.Y = p.X-150, p.Y+100
 			applyPower(&p.kit, "ghost", 600, 600)
 			if kind != "" {

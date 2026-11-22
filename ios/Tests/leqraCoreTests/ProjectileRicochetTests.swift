@@ -10,6 +10,24 @@ final class ProjectileRicochetTests: XCTestCase {
             walls: [MazeWall(x: 80, y: 0, w: 8, h: 168, axis: "v", line: 84)])
     }
 
+    func testLiveLocalShotsReflectAtWallsAndLeaveAuthorityUntouched() {
+        let maze = InfiniteMaze(world: world)
+        for kind in ["", "rapid", "scatter", "homing", "grenade", "cannon"] {
+            let source = ArenaBullet(id: 1, x: 70, y: 42, vx: 500, owner: 1, kind: kind, life: 5)
+            let shown = ProjectileRicochetPath.live(source, dt: 0.04, maze: maze)
+            if kind == "cannon" {
+                XCTAssertEqual(shown.x, 90, accuracy: 1e-8)
+                XCTAssertEqual(shown.bounces, 0)
+            } else {
+                XCTAssertLessThan(shown.x, 80)
+                XCTAssertLessThan(shown.vx, 0)
+                XCTAssertEqual(shown.bounces, 1)
+            }
+            XCTAssertEqual(source.x, 70)
+            XCTAssertEqual(source.vx, 500)
+        }
+    }
+
     func testValidatedRicochetMovesBeforeAndAfterWallWithoutCrossingIt() throws {
         for kind in ["", "rapid", "scatter"] {
             let radius = kind == "rapid" ? 3.5 / 3 : 3.5

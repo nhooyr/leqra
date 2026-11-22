@@ -3,6 +3,12 @@ import Foundation
 // The native wire model mirrors the Go server. Omitted optional gameplay fields
 // use the protocol defaults, allowing the same renderer to display both arenas.
 public enum GamePalette {
+    public static func randomPilotColor(
+        current: Int, avoiding used: [Int], choose: (Int) -> Int = { Int.random(in: 0..<$0) }
+    ) -> Int {
+        let choices = colors.indices.filter { $0 != current && !used.contains($0) }
+        return choices.isEmpty ? current : choices[choose(choices.count)]
+    }
     public static let colors = [
         "#d2f65a", "#ff9679", "#73cee4", "#c5a2ff", "#ffc46b", "#ff83bd", "#75f0cb", "#b7c6ee",
     ]
@@ -27,6 +33,8 @@ public struct GameInput: Codable, Equatable, Sendable {
     public var touchAim: Bool = true
     public var aimOnly: Bool = false
     public var snapAim: Bool = false
+    public var aimX: Double = 0
+    public var aimY: Double = 0
 
     public init(
         seq: UInt64 = 0,
@@ -39,7 +47,8 @@ public struct GameInput: Codable, Equatable, Sendable {
         stickY: Double = 0,
         touchAim: Bool = true,
         aimOnly: Bool = false,
-        snapAim: Bool = false
+        snapAim: Bool = false,
+        aimX: Double = 0, aimY: Double = 0
     ) {
         self.seq = seq
         self.forward = forward
@@ -52,10 +61,12 @@ public struct GameInput: Codable, Equatable, Sendable {
         self.touchAim = touchAim
         self.aimOnly = aimOnly
         self.snapAim = snapAim
+        self.aimX = aimX
+        self.aimY = aimY
     }
 
     private enum CodingKeys: String, CodingKey {
-        case seq, forward, reverse, left, right, fire, stickX, stickY, touchAim, aimOnly, snapAim
+        case seq, forward, reverse, left, right, fire, stickX, stickY, touchAim, aimOnly, snapAim, aimX, aimY
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -70,6 +81,8 @@ public struct GameInput: Codable, Equatable, Sendable {
         touchAim = try c.decodeIfPresent(Bool.self, forKey: .touchAim) ?? false
         aimOnly = try c.decodeIfPresent(Bool.self, forKey: .aimOnly) ?? false
         snapAim = try c.decodeIfPresent(Bool.self, forKey: .snapAim) ?? false
+        aimX = try c.decodeIfPresent(Double.self, forKey: .aimX) ?? 0
+        aimY = try c.decodeIfPresent(Double.self, forKey: .aimY) ?? 0
     }
 }
 
@@ -144,6 +157,9 @@ public struct ArenaTank: Codable, Equatable, Sendable {
     public var x: Double = 0
     public var y: Double = 0
     public var angle: Double = 0
+    public var bodyAngle: Double = 0
+    public var independentAim: Bool = false
+    public var movementAngle: Double { independentAim ? bodyAngle : angle }
     public var hp: Int = 1
     public var colorIndex: Int = 0
     public var score: Int = 0
@@ -225,13 +241,17 @@ public struct ArenaTank: Codable, Equatable, Sendable {
         vx: Double = 0,
         vy: Double = 0,
         ammoEpoch: UInt64 = 0,
-        grenadeEpoch: UInt64? = nil
+        grenadeEpoch: UInt64? = nil,
+        bodyAngle: Double = 0,
+        independentAim: Bool = false
     ) {
         self.id = id
         self.name = name
         self.x = x
         self.y = y
         self.angle = angle
+        self.bodyAngle = bodyAngle
+        self.independentAim = independentAim
         self.hp = hp
         self.colorIndex = colorIndex
         self.score = score
@@ -275,7 +295,8 @@ public struct ArenaTank: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, x, y, vx, vy, angle, hp, colorIndex, score, rank, team, bot, protected, spawnProtected,
+        case id, name, x, y, vx, vy, angle, bodyAngle, independentAim, hp, colorIndex, score, rank, team, bot,
+            protected, spawnProtected,
             ack, ackSteps, spawnSerial, track, recoil, cooldown, cooldownTotal, invulnerable, powerTime,
             shield, speedTime, ghostTime, starmanTime, respawnTime, grenadeLife, power, charges,
             machineRounds, shieldCharges, speedStacks, ammoUsed, ammoEpoch, grenadeEpoch, grenades, locked,
@@ -290,6 +311,8 @@ public struct ArenaTank: Codable, Equatable, Sendable {
         vx = try c.decodeIfPresent(Double.self, forKey: .vx) ?? 0
         vy = try c.decodeIfPresent(Double.self, forKey: .vy) ?? 0
         angle = try c.decodeIfPresent(Double.self, forKey: .angle) ?? 0
+        bodyAngle = try c.decodeIfPresent(Double.self, forKey: .bodyAngle) ?? 0
+        independentAim = try c.decodeIfPresent(Bool.self, forKey: .independentAim) ?? false
         hp = try c.decodeIfPresent(Int.self, forKey: .hp) ?? 1
         colorIndex = try c.decodeIfPresent(Int.self, forKey: .colorIndex) ?? 0
         score = try c.decodeIfPresent(Int.self, forKey: .score) ?? 0

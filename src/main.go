@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	version = "v5.8.1"
+	version = "v5.8.2"
 	// Advance the protocol epoch only when existing clients cannot use the wire contract.
 	protocolVersion = 1
 	maxRoomLimit    = 32768
@@ -502,7 +502,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer app.infinite.close()
-	admin, err := startLeaderboardAdmin(app.infinite, env("LEQRA_ADMIN_ADDR", "127.0.0.1:8081"))
+	admin, err := startLeaderboardAdmin(app.infinite, env("LEQRA_ADMIN_ADDR", "localhost:8081"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -521,8 +521,8 @@ func main() {
 	for _, lanURL := range lanURLs {
 		fmt.Println(lanURL)
 	}
-	if admin.url != "" {
-		fmt.Printf("admin: %s\n", admin.url)
+	for _, url := range admin.urls {
+		fmt.Printf("admin: %s\n", url)
 	}
 	if err := app.serve(srv, listener, stopped); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)

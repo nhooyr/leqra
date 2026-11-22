@@ -76,6 +76,8 @@ function boot(mode = "room", mobile = false) {
   ]
   const s = {
     Net,
+    setTimeout: () => 1,
+    clearTimeout() {},
     mode,
     bindings,
     navigator: { maxTouchPoints: mobile ? 5 : 0 },
@@ -170,6 +172,7 @@ function boot(mode = "room", mobile = false) {
     "mouseControlledTank",
     "clearInput",
     "humanControl",
+    "localMovementInput",
     "onlineControls",
     "composingKey",
     "arenaKeyBlocked",

@@ -80,6 +80,9 @@ function element() {
   }
 }
 function boot() {
+  let now = 0,
+    nextTimer = 0
+  const timers = new Map()
   const elements = new Map(),
     $ = (id) => {
       if (!elements.has(id)) elements.set(id, element())
@@ -102,6 +105,13 @@ function boot() {
     window = eventTarget()
   const s = {
     Net: require(assetPath("netcode.js")),
+    setTimeout(callback, delay) {
+      timers.set(++nextTimer, { callback, at: now + delay })
+      return nextTimer
+    },
+    clearTimeout(id) {
+      timers.delete(id)
+    },
     fireDrag: { id: null, x: 0, y: 0, active: false },
     directAim: { active: false, id: null, angle: 0 },
     document,
@@ -154,6 +164,14 @@ function boot() {
     document,
     window,
     selection,
+    advance(ms) {
+      now += ms
+      for (const [id, timer] of timers)
+        if (timer.at <= now) {
+          timers.delete(id)
+          timer.callback()
+        }
+    },
     setPhase(phase) {
       s.phase = phase
       s.syncPauseButton()
@@ -258,7 +276,7 @@ test("joystick plus Fire keep independent pointers through a prevented pinch and
   assert.equal(b.$("fireBtn").classList.contains("held"), false)
 })
 
-test("Fire drag has a dead zone, retains aim on release, and gives a held joystick control again", () => {
+test("Fire drag retains turret aim when released while the joystick stays independent", () => {
   const b = boot()
   b.setPhase("playing")
   const start = { pointerId: 11, pointerType: "touch", clientX: 300, clientY: 500 }
@@ -277,13 +295,16 @@ test("Fire drag has a dead zone, retains aim on release, and gives a held joysti
   assert.equal(b.s.firePointers.size, 0)
   assert.equal(b.$("fireBtn").style["--fire-aim-y"], "0px")
   b.$("stickZone").emit("pointerdown", { pointerId: 12, pointerType: "touch", clientX: 80, clientY: 48 })
+  assert.equal(b.s.directAim.active, true, "pressing the joystick must retain independent turret aim")
+  assert.equal(b.s.directAim.angle, -Math.PI / 2)
   b.$("fireBtn").emit("pointerdown", start)
+  assert.equal(b.s.directAim.angle, -Math.PI / 2, "pressing Fire must retain independent turret aim")
   b.window.emit("pointermove", { ...start, clientY: 460 })
   b.window.emit("pointermove", { pointerId: 12, clientX: 60, clientY: 48 })
   assert.equal(b.s.directAim.active, true)
   assert.equal(b.s.stick.assisted, true)
   b.window.emit("pointerup", start)
-  assert.equal(b.s.directAim.active, false)
+  assert.equal(b.s.directAim.active, true)
   b.window.emit("pointercancel", { pointerId: 12 })
 })
 
@@ -585,4 +606,43 @@ test("Fire crosshair travel follows the drag and stays inside small and large bu
   const diagonal = Net.fireAimOffset(30, 40)
   assert.ok(Math.abs(Math.hypot(diagonal.x, diagonal.y) - 24) < 1e-10)
   assert.ok(Math.abs(diagonal.x / diagonal.y - 0.75) < 1e-10)
+})
+
+test("holding the Fire center starts continuous fire and release adds no second tap", () => {
+  const b = boot()
+  b.setPhase("playing")
+  const start = { pointerId: 14, pointerType: "touch", clientX: 48, clientY: 48 }
+  b.$("fireBtn").emit("pointerdown", start)
+  b.advance(179)
+  assert.equal(b.s.primaryFireHeld(), false)
+  b.advance(1)
+  assert.equal(b.s.primaryFireHeld(), true)
+  assert.equal(b.s.firePresses.size, 1)
+  b.s.firePresses.clear()
+  b.window.emit("pointermove", { ...start, clientY: 10 })
+  assert.equal(b.s.primaryFireHeld(), true, "aiming after a hold keeps firing")
+  b.window.emit("pointerup", start)
+  assert.equal(b.s.primaryFireHeld(), false)
+  assert.equal(b.s.firePresses.size, 0, "release must not add another tap")
+  b.$("fireBtn").emit("pointerdown", start)
+  b.window.emit("pointermove", { ...start, clientY: 10 })
+  b.advance(1000)
+  assert.equal(b.s.primaryFireHeld(), false, "dragging before the hold threshold stays silent")
+  b.window.emit("pointercancel", start)
+})
+
+test("Fire aim keeps the hull driving east while the gun points north", () => {
+  const net = require(assetPath("netcode.js"))
+  const tank = { x: 200, y: 200, angle: 0, alive: true, track: 0 }
+  const input = { stickX: 1, stickY: 0, ...net.fireAimInput(0, -1) }
+  for (let i = 0; i < 30; i++)
+    net.move(tank, input, 1 / 60, (t, x, y) => {
+      t.x += x
+      t.y += y
+    })
+  assert(Math.abs(tank.x - 264) < 1e-7)
+  assert.equal(tank.y, 200)
+  assert.equal(net.bodyHeading(tank), 0)
+  assert.equal(tank.angle, -Math.PI / 2)
+  assert.equal(net.controlsEqual(input, { ...input, aimX: 1, aimY: 0 }), false)
 })

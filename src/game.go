@@ -103,6 +103,8 @@ type Input struct {
 	FireSuppressed bool    `json:"-"` // Stale controls are neutral, not a physical release.
 	StickX         float64 `json:"stickX"`
 	StickY         float64 `json:"stickY"`
+	AimX           float64 `json:"aimX,omitempty"`
+	AimY           float64 `json:"aimY,omitempty"`
 	AimOnly        bool    `json:"aimOnly,omitempty"`  // The direction turns the tank; keyboard drive still sets throttle.
 	TouchAim       bool    `json:"touchAim,omitempty"` // Touch joystick steering uses the faster turn curve.
 	SnapAim        bool    `json:"snapAim,omitempty"`  // Direct touch aiming rotates in place immediately.
@@ -133,6 +135,8 @@ type Tank struct {
 	X              float64           `json:"x"`
 	Y              float64           `json:"y"`
 	Angle          float64           `json:"angle"`
+	BodyAngle      float64           `json:"bodyAngle,omitempty"`
+	IndependentAim bool              `json:"independentAim,omitempty"`
 	R              float64           `json:"r"`
 	VX             float64           `json:"vx"`
 	VY             float64           `json:"vy"`
@@ -697,9 +701,9 @@ func (g *Game) control(t *Tank, in Input, dt float64) {
 	g.advanceGhost(t, dt)
 	n := movementSpeedCount(t)
 	speedScale, turnScale := 1+boostSpeedPerStack*float64(n), 1+boostTurnPerStack*float64(n)
-	angle, throttle := steerTank(t.Angle, in, turnScale, dt)
-	t.Angle = angle
-	g.moveTank(t, math.Cos(t.Angle)*128*speedScale*throttle*dt, math.Sin(t.Angle)*128*speedScale*throttle*dt)
+	angle, throttle := steerTank(bodyHeading(t.Angle, t.BodyAngle, t.IndependentAim), in, turnScale, dt)
+	t.Angle, t.BodyAngle, t.IndependentAim = aimedHeading(angle, in)
+	g.moveTank(t, math.Cos(angle)*128*speedScale*throttle*dt, math.Sin(angle)*128*speedScale*throttle*dt)
 	// Count server simulation ticks under this held input, not received packets.
 	// The browser uses (ack, ackSteps) to replay only movement not included here.
 	if t.Ack != in.Seq {
@@ -713,6 +717,21 @@ func (g *Game) control(t *Tank, in Input, dt float64) {
 	if !in.FireSuppressed {
 		g.weaponControl(t, in.Fire, pressed)
 	}
+}
+
+func bodyHeading(angle, bodyAngle float64, independent bool) float64 {
+	if independent {
+		return bodyAngle
+	}
+	return angle
+}
+
+// Position and collision use the hull heading; weapons continue to use Angle.
+func aimedHeading(bodyAngle float64, in Input) (float64, float64, bool) {
+	if math.Hypot(in.AimX, in.AimY) > .1 {
+		return math.Atan2(in.AimY, in.AimX), bodyAngle, true
+	}
+	return bodyAngle, 0, false
 }
 
 func steerTank(angle float64, in Input, turnScale, dt float64) (float64, float64) {

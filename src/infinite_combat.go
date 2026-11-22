@@ -50,6 +50,7 @@ func (p *infinitePilot) wireTank(tick uint64) infiniteTank {
 		t.Difficulty = ""
 	}
 	t.X, t.Y, t.Angle = infinitePrecision(t.X), infinitePrecision(t.Y), infinitePrecision(t.Angle)
+	t.BodyAngle = infinitePrecision(t.BodyAngle)
 	t.VX, t.VY = infinitePrecision(t.VX), infinitePrecision(t.VY)
 	if p.HP == 0 || p.disconnected || p.paused {
 		t.VX, t.VY = 0, 0

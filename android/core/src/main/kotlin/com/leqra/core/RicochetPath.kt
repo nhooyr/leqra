@@ -33,6 +33,44 @@ private constructor(private val segments: List<Segment>, private val duration: D
     }
 
     companion object {
+        /** Advance a local shot between arrivals without changing authoritative combat. */
+        fun live(source: ArenaBullet, dt: Double, maze: InfiniteMaze?): ArenaBullet {
+            val span = dt.coerceIn(0.0, .075).coerceAtMost(source.life.coerceAtLeast(0.0))
+            val bullet = source.copy()
+            if (bullet.kind == "grenade") {
+                val drag = PracticeArena.grenadeDragFactor(bullet.life, bullet.life - span)
+                bullet.vx *= drag
+                bullet.vy *= drag
+            }
+            val radius = PracticeArena.spec(bullet.kind).radius
+            val nudge = if (maze?.world == null) .12 else .08
+            var remaining = span
+            repeat(4) {
+                if (remaining <= 1e-8) return bullet
+                val hit =
+                    maze?.projectileHit(
+                        bullet.kind,
+                        bullet.x,
+                        bullet.y,
+                        bullet.vx * remaining,
+                        bullet.vy * remaining,
+                        radius,
+                    )
+                val elapsed = remaining * (hit?.fraction ?: 1.0)
+                bullet.x += bullet.vx * elapsed
+                bullet.y += bullet.vy * elapsed
+                bullet.life -= elapsed
+                if (hit == null) return bullet
+                bullet.x += hit.nx * nudge
+                bullet.y += hit.ny * nudge
+                if (hit.nx != 0.0) bullet.vx = -bullet.vx
+                if (hit.ny != 0.0) bullet.vy = -bullet.vy
+                bullet.bounces++
+                remaining -= elapsed
+            }
+            return bullet
+        }
+
         fun between(
             first: ArenaBullet,
             second: ArenaBullet,

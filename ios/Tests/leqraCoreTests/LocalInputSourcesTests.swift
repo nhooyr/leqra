@@ -5,15 +5,16 @@ import XCTest
 final class LocalInputSourcesTests: XCTestCase {
     func testFireDragAimsInPlaceWithoutChangingOtherHeldSources() {
         var sources = LocalInputSources()
-        sources.touch = GameInput(fire: true, stickX: 1)
+        sources.touch = GameInput(fire: true)
         sources.keyboard.forward = true
         sources.fireAim = BeamPoint(x: 0, y: -1)
         let aimed = sources.input
         XCTAssertTrue(aimed.fire)
-        XCTAssertTrue(aimed.aimOnly)
-        XCTAssertTrue(aimed.snapAim)
+        XCTAssertEqual(aimed.aimX, 0)
+        XCTAssertEqual(aimed.aimY, -1)
         XCTAssertEqual(aimed.stickX, 0)
-        XCTAssertEqual(aimed.stickY, -1)
+        XCTAssertEqual(aimed.stickY, 0)
+        sources.touch.stickX = 1
         sources.fireAim = nil
         XCTAssertEqual(sources.input.stickX, 1)
         XCTAssertTrue(sources.input.forward)
@@ -21,6 +22,30 @@ final class LocalInputSourcesTests: XCTestCase {
         sources.reset()
         XCTAssertNil(sources.fireAim)
     }
+    func testJoystickKeepsMovingWhileFireChangesAim() {
+        var sources = LocalInputSources()
+        sources.touch = GameInput(stickX: 0.6)
+        sources.fireAim = BeamPoint(x: 0, y: -1)
+        let aimed = sources.input
+        XCTAssertFalse(aimed.aimOnly)
+        XCTAssertFalse(aimed.snapAim)
+        XCTAssertEqual(aimed.stickX, 0.6)
+        XCTAssertEqual(aimed.stickY, 0)
+        XCTAssertEqual(aimed.aimX, 0)
+        XCTAssertEqual(aimed.aimY, -1)
+        var tank = ArenaTank(x: 200, y: 200)
+        for _ in 0..<30 {
+            TankMovement.step(tank: &tank, input: aimed, dt: 1 / 60, walls: [], width: 1000, height: 1000)
+        }
+        XCTAssertEqual(tank.x, 238.4, accuracy: 0.0001)
+        XCTAssertEqual(tank.y, 200, accuracy: 0.0001)
+        XCTAssertEqual(tank.movementAngle, 0, accuracy: 0.0001)
+        XCTAssertEqual(tank.angle, -.pi / 2, accuracy: 0.0001)
+        sources.touch = GameInput()
+        XCTAssertEqual(sources.input.aimY, -1)
+        XCTAssertEqual(sources.input.stickX, 0)
+    }
+
     func testKeyboardAndMouseCombineWithoutMovingTheTouchSeat() {
         let p1 = LocalInputSources()
         var p2 = LocalInputSources()

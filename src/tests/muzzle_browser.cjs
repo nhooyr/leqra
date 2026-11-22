@@ -28,7 +28,7 @@ window.__muzzleFixed={
   Object.assign(tanks[1],{x:430,y:340,angle:0,invulnerable:1000,spawnProtected:false,human:true,localIndex:1});const t=tanks[0];Object.assign(t,{x:172-gap,y:210,angle:0,invulnerable:0,spawnProtected:false,cooldown:0,human:true,localIndex:0,ghostTime:ghost?600:0});
   if(kind)grantPower(t,kind);cacheMap();$('announcer').hidden=true;updateHUD(true);__muzzle.draws=[];return t;
  },
- shot(kind,near){const t=this.setup(kind,near);fire(t);render();const b=bullets[kind==='scatter'?1:0];return{draw:__muzzle.draws[0],bullet:b&&{x:b.x,y:b.y,vx:b.vx,r:b.r,startX:b.flightStartX,startY:b.flightStartY},beam:traces[0]?.points,tank:{x:t.x,y:t.y}};},
+ shot(kind,near){const t=this.setup(kind,near);t.bodyAngle=Math.PI/2;t.independentAim=true;fire(t);render();const b=bullets[kind==='scatter'?1:0];return{draw:__muzzle.draws[0],bullet:b&&{x:b.x,y:b.y,vx:b.vx,r:b.r,startX:b.flightStartX,startY:b.flightStartY},beam:traces[0]?.points,tank:{x:t.x,y:t.y}};},
  turn(touch){const t=this.setup('',true);Object.assign(t,{invulnerable:1000});
   if(touch){const z=$('stickZone'),r=z.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2;z.dispatchEvent(new PointerEvent('pointerdown',{pointerId:77,pointerType:'touch',clientX:x,clientY:y,bubbles:true}));window.dispatchEvent(new PointerEvent('pointermove',{pointerId:77,pointerType:'touch',clientX:x,clientY:y+100,bubbles:true}));}
   else keys.add('KeyD');
@@ -53,7 +53,7 @@ window.__muzzleInfinity={
   const ghost=typeof near==='string'&&near.startsWith('ghost'),gap=ghost?Number(near.slice(5)):22;
   const t=w.tanks[0];Object.assign(t,{x:172-gap,y:210,angle:0,invulnerable:0,spawnProtected:false,cooldown:0,power:kind,powerTime:30,charges:5,machineRounds:180,ghostTime:ghost?600:0});w.tanks=[t];w.camera.x=t.x;w.camera.y=t.y;__muzzle.draws=[];return w;
  },
- shot(kind,near){const w=this.setup(kind,near),t=w.tanks[0];fireShot(w,t);draw(w,__muzzle.clock,0);const b=w.bullets[kind==='scatter'?1:0];return{draw:__muzzle.draws[0],bullet:b&&{x:b.x,y:b.y,vx:b.vx,r:b.r,startX:b.flightStartX,startY:b.flightStartY},beam:w.visualEffects?.find(e=>e.kind==='laser')?.points,tank:{x:t.x,y:t.y}};},
+ shot(kind,near){const w=this.setup(kind,near),t=w.tanks[0];t.bodyAngle=Math.PI/2;t.independentAim=true;fireShot(w,t);draw(w,__muzzle.clock,0);const b=w.bullets[kind==='scatter'?1:0];return{draw:__muzzle.draws[0],bullet:b&&{x:b.x,y:b.y,vx:b.vx,r:b.r,startX:b.flightStartX,startY:b.flightStartY},beam:w.visualEffects?.find(e=>e.kind==='laser')?.points,tank:{x:t.x,y:t.y}};},
  turn(touch){const w=this.setup('',true),t=w.tanks[0];t.invulnerable=1000;
   if(touch){const z=document.getElementById('infiniteStick'),r=z.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2;z.dispatchEvent(new PointerEvent('pointerdown',{pointerId:77,pointerType:'touch',clientX:x,clientY:y,bubbles:true}));window.dispatchEvent(new PointerEvent('pointermove',{pointerId:77,pointerType:'touch',clientX:x,clientY:y+100,bubbles:true}));}
   else pressed.add('KeyD');
@@ -163,6 +163,7 @@ const server = http.createServer((req, res) => {
                 )
                 const collides = near && (near !== "corner" || kind !== "rapid")
                 assert.ok(value.draw, engine + " " + arena + " drew no turret")
+                assert.ok(Math.abs(value.draw.angle) < 1e-8, "barrel must face east while the hull faces south")
                 assert.ok(
                   value.draw.tip <= (collides ? 21.500001 : 26.000001),
                   JSON.stringify({ engine, arena, kind, near, value }),

@@ -6,6 +6,20 @@ import org.junit.Test
 
 class OnlinePresentationTest {
     @Test
+    fun localProjectileBirthBypassesRemoteInterpolationDelay() {
+        val view = OnlinePresentation(localID = 1)
+        view.setLocalIDs(1, 2)
+        val tanks = (1..3).map { ArenaTank(id = it, x = 100.0, y = 100.0) }
+        view.accept(ArenaSnapshot(tick = 600, tanks = tanks), 10.0)
+        view.render(0.0, GameInput(), 10.0) {}
+        val bullets =
+            (1..3).map { ArenaBullet(id = it, x = 128.0, y = 100.0, vx = 282.0, owner = it) }
+        view.accept(ArenaSnapshot(tick = 602, tanks = tanks, bullets = bullets), 10.0 + 2.0 / 60)
+        val shown = view.render(0.0, GameInput(), 10.0 + 2.0 / 60) {}!!
+        assertEquals(setOf(1, 2), shown.bullets.map { it.owner }.toSet())
+    }
+
+    @Test
     fun rejectedPacketsCannotRestartTheAcceptedEquipmentAgingClock() {
         val timeline = OnlinePresentation()
         fun state(tick: Long, generation: Int = 7) =

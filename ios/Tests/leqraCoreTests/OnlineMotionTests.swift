@@ -3,6 +3,17 @@ import XCTest
 @testable import leqraCore
 
 final class OnlineMotionTests: XCTestCase {
+    func testLocalProjectileBirthBypassesRemoteInterpolationDelay() throws {
+        let view = RenderTimeline(localID: 1, secondaryLocalID: 2) { _, _, _ in }
+        let tanks = (1...3).map { ArenaTank(id: $0, x: 100, y: 100) }
+        view.accept(ArenaSnapshot(tick: 600, tanks: tanks), at: 10)
+        _ = view.render(dt: 0, input: GameInput(), now: 10) { _ in }
+        let bullets = (1...3).map { ArenaBullet(id: $0, x: 128, y: 100, vx: 282, owner: $0) }
+        view.accept(ArenaSnapshot(tick: 602, tanks: tanks, bullets: bullets), at: 10 + 2.0 / 60)
+        let shown = try XCTUnwrap(view.render(dt: 0, input: GameInput(), now: 10 + 2.0 / 60) { _ in })
+        XCTAssertEqual(Set(shown.bullets.map(\.owner)), Set([1, 2]))
+    }
+
     private func state(
         tick: UInt64, x: Double, ack: UInt64 = 0, ghost: Double = 0,
         spawn: Int = 1, world: ArenaWorld? = nil

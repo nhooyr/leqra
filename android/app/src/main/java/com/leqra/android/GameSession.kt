@@ -402,6 +402,8 @@ internal class GameSession(context: Context) {
                 resizeBots(3.coerceAtMost(maxLocalBots))
             }
         normalizeLocalTeams(resetCTF = false)
+        if (!prefs.contains("color")) randomizePilotColor(0)
+        if (!prefs.contains("localColor")) randomizePilotColor(1)
         preparePreview()
         save()
         persistNameDrafts()
@@ -500,6 +502,28 @@ internal class GameSession(context: Context) {
         persistNameDrafts()
     }
 
+    private fun randomizePilotColor(seat: Int) {
+        val other = if (seat == 0) localColorIndex else colorIndex
+        val bots =
+            if (online)
+                room
+                    ?.roomRosterMembers()
+                    .orEmpty()
+                    .filter { it.optString("kind") == "bot" }
+                    .map {
+                        GamePalette.index(
+                            it.optInt(
+                                "colorIndex",
+                                GamePalette.colors.indexOf(it.optString("color")),
+                            ),
+                        )
+                    }
+            else localBots.map { it.colorIndex }
+        val current = if (seat == 0) colorIndex else localColorIndex
+        val next = GamePalette.randomPilotColor(current, bots + other)
+        if (seat == 0) colorIndex = next else localColorIndex = next
+    }
+
     fun generateCallsign(seat: Int) {
         require(seat in 0..1)
         if (switchingCallsign || releasingCallsign) return
@@ -532,6 +556,7 @@ internal class GameSession(context: Context) {
                     if (server != origin || !row.selected) return@onSuccess
                     committedCallsigns[seat] = row.name
                     if (seat == 0) callsign = row.name else localCallsign = row.name
+                    randomizePilotColor(seat)
                     nameDrafts.cancel(seat)
                     save()
                     leave()
@@ -558,6 +583,7 @@ internal class GameSession(context: Context) {
                             .onSuccess {
                                 committedCallsigns[seat] = name
                                 if (seat == 0) callsign = name else localCallsign = name
+                                randomizePilotColor(seat)
                                 nameDrafts.cancel(seat)
                                 save()
                                 leave()

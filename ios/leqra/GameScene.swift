@@ -78,7 +78,7 @@ final class GameScene: SKScene {
     }
     var directAimProbePoint: CGPoint? { aimTankPosition.map { CGPoint(x: $0.x, y: size.height - $0.y) } }
     var controlLabelProbe: String {
-        "controlLabels=\(controls.children.filter { $0 is SKLabelNode }.count),stickBottom=\(stickOrigin.y - 51 - stickKnob.lineWidth / 2),fireBottom=\(fireOrigin.y - 53.5 - fireTrackRing.lineWidth / 2),controlCenterY=\(fireOrigin.y),fireX=\(fireOrigin.x),fireY=\(fireOrigin.y),crosshairX=\(fireCrosshair.position.x),crosshairY=\(-fireCrosshair.position.y)"
+        "controlLabels=\(controls.children.filter { $0 is SKLabelNode }.count),stickBottom=\(stickOrigin.y - 51 - stickKnob.lineWidth / 2),fireBottom=\(fireOrigin.y - 53.5 - fireTrackRing.lineWidth / 2),controlCenterY=\(fireOrigin.y),fireX=\(fireOrigin.x),fireY=\(fireOrigin.y),driveX=\(stickOrigin.x),driveY=\(stickOrigin.y),crosshairX=\(fireCrosshair.position.x),crosshairY=\(-fireCrosshair.position.y)"
     }
     private let emptyFireProbe = ProcessInfo.processInfo.arguments.contains("--probe-empty-fire-feedback")
     private(set) var layoutMode: LayoutMode = .infinity
@@ -132,6 +132,9 @@ final class GameScene: SKScene {
     private var fireTouch: UITouch?
     private var fireTouchOrigin = CGPoint.zero
     private var fireTouchCenter = false
+    private var fireTouchFiring = false
+    private var fireTouchDragged = false
+    private var fireHoldTask: DispatchWorkItem?
     private var stickOrigin = CGPoint.zero
     private var fireOrigin = CGPoint.zero
     private var previousTime: TimeInterval = 0
@@ -490,7 +493,14 @@ final class GameScene: SKScene {
         world.setScale(zoom)
     }
 
+    private func cancelFireHold() {
+        fireHoldTask?.cancel()
+        fireHoldTask = nil
+    }
+
     func resetControls() {
+        cancelFireHold()
+        fireTouchFiring = false
         onControlsReset?()
         aimTouch = nil
         stickTouch = nil
@@ -1295,7 +1305,10 @@ final class GameScene: SKScene {
         guard frozenShowcase == nil, !spectating, showsTouchControls else { return }
         for touch in touches where touch.type != .indirectPointer {
             let location = touch.location(in: self)
-            if aimTouch == nil && updateDirectAim(location, nearOnly: true) {
+            let overlaidControl =
+                hypot(location.x - stickOrigin.x, location.y - stickOrigin.y) <= 51
+                || showsFireControl && hypot(location.x - fireOrigin.x, location.y - fireOrigin.y) <= 56
+            if !overlaidControl && aimTouch == nil && updateDirectAim(location, nearOnly: true) {
                 aimTouch = touch
             } else if stickTouch == nil && location.x < size.width / 2 && location.y < size.height * 0.75 {
                 stickTouch = touch
@@ -1305,8 +1318,23 @@ final class GameScene: SKScene {
             {
                 fireTouch = touch
                 fireTouchOrigin = location
+                fireTouchDragged = false
                 fireTouchCenter = hypot(location.x - fireOrigin.x, location.y - fireOrigin.y) <= 22
-                setFireSource(.touch, down: !fireTouchCenter)
+                cancelFireHold()
+                fireTouchFiring = !fireTouchCenter
+                setFireSource(.touch, down: fireTouchFiring)
+                if fireTouchCenter {
+                    let task = DispatchWorkItem { [weak self, weak touch] in
+                        guard let self, let touch, self.fireTouch === touch,
+                            !self.fireTouchDragged
+                        else { return }
+                        self.fireHoldTask = nil
+                        self.fireTouchFiring = true
+                        self.setFireSource(.touch, down: true)
+                    }
+                    fireHoldTask = task
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: task)
+                }
                 impact.prepare()
             }
         }
@@ -1324,6 +1352,8 @@ final class GameScene: SKScene {
                 let dy = Double(fireTouchOrigin.y - point.y)
                 let distance = hypot(dx, dy)
                 if distance.isFinite && distance >= 8 {
+                    cancelFireHold()
+                    fireTouchDragged = true
                     inputSources.fireAim = BeamPoint(x: dx / distance, y: dy / distance)
                     let scale = min(1, 24 / distance)
                     fireCrosshair.position = CGPoint(x: dx * scale, y: -dy * scale)
@@ -1351,14 +1381,10 @@ final class GameScene: SKScene {
                 stickKnob.position = stickOrigin
             }
             if touch === fireTouch {
-                let tap = fireTouchCenter && inputSources.fireAim == nil && !cancelled
-                if let direction = inputSources.fireAim, !cancelled, stickTouch == nil, aimTouch == nil {
-                    inputSources.touch.stickX = direction.x
-                    inputSources.touch.stickY = direction.y
-                    inputSources.touch.aimOnly = true
-                    inputSources.touch.snapAim = true
-                }
-                inputSources.fireAim = nil
+                cancelFireHold()
+                let tap = fireTouchCenter && !fireTouchDragged && !fireTouchFiring && !cancelled
+                fireTouchFiring = false
+                if cancelled { inputSources.fireAim = nil }
                 fireTouch = nil
                 fireCrosshair.position = .zero
                 if tap { setFireSource(.touch, down: true) }
@@ -1385,6 +1411,7 @@ final class GameScene: SKScene {
         let dy = Double(tank.y - point.y)
         let distance = hypot(dx, dy)
         guard distance >= 2, !nearOnly || distance <= max(64, 51 * Double(zoom)) else { return false }
+        inputSources.fireAim = nil
         inputSources.touch.stickX = dx / distance
         inputSources.touch.stickY = dy / distance
         inputSources.touch.aimOnly = true
@@ -1452,7 +1479,7 @@ private final class TankNode: SKNode {
     private(set) var paint = Palette.accent
     private(set) var identityWidth: CGFloat = 120
     private(set) var identityHeight: CGFloat = 20
-    var barrelOffset: CGFloat { barrel.position.x }
+    var barrelOffset: CGFloat { -hypot(barrel.position.x, barrel.position.y) }
 
     override init() {
         super.init()
@@ -1530,7 +1557,10 @@ private final class TankNode: SKNode {
         let local = localSeat != nil
         isHidden = infinity && tank.hp <= 0 && !showWreck
         paint = Palette.tank(tank.colorIndex)
-        hull.zRotation = -tank.angle
+        hull.zRotation = -tank.movementAngle
+        let turretRotation = -(tank.angle - tank.movementAngle)
+        barrel.zRotation = turretRotation
+        turret.zRotation = turretRotation
         hull.alpha = tank.hp <= 0 ? 0.6 : tank.ghostTime > 0 ? (tank.starmanTime > 0 ? 0.84 : 0.58) : 1
         let phase = ((Int(floor(tank.track / 2)) % 4) + 4) % 4
         let nextKey = "\(tank.colorIndex):\(phase):\(tank.hp > 0)"
@@ -1543,7 +1573,7 @@ private final class TankNode: SKNode {
         }
         barrel.isHidden = tank.hp <= 0 || retraction >= 21
         turret.isHidden = tank.hp <= 0
-        barrel.position.x = -retraction
+        barrel.position = CGPoint(x: -retraction * cos(turretRotation), y: -retraction * sin(turretRotation))
         let shields = tank.hp > 0 && tank.shield > 0 ? max(1, min(5, tank.shieldCharges)) : 0
         for (index, ring) in shieldRings.enumerated() { ring.isHidden = index >= shields }
         protectionRing.isHidden = tank.hp <= 0 || shields > 0 || tank.invulnerable <= 0

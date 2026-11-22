@@ -2,12 +2,17 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"net"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 type testLeaderboardAdminBackend struct {
@@ -19,6 +24,8 @@ type testLeaderboardAdminBackend struct {
 func (b *testLeaderboardAdminBackend) AdminLeaderboard() []leaderboardAdminEntry {
 	return []leaderboardAdminEntry{{ID: 1, Name: "<script>alert(1)</script>", Score: 17, Connected: true}, {ID: 2, Name: "Test Pilot", Score: 9}, {ID: 3, Name: "bot", Score: 3, Bot: true}}
 }
+func (b *testLeaderboardAdminBackend) AdminAccounts() []leaderboardAdminAccount { return nil }
+func (b *testLeaderboardAdminBackend) RecoverAdminAccount(string, string) error { return nil }
 func (b *testLeaderboardAdminBackend) ResetPublicLeaderboard() (int, error) {
 	b.resets++
 	if b.fail {
@@ -153,24 +160,153 @@ func TestLeaderboardAdminRefusesPublicListener(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if admin.url != "" {
-		t.Fatalf("disabled admin reported URL %q", admin.url)
+	if len(admin.urls) != 0 {
+		t.Fatalf("disabled admin reported URLs %q", admin.urls)
 	}
 	admin.Close()
+}
+
+func TestLeaderboardAdminAdvertisesBoundAddress(t *testing.T) {
+	b := &testLeaderboardAdminBackend{}
 	for _, address := range []string{"127.0.0.1:0", "[::1]:0"} {
 		admin, err := startLeaderboardAdmin(b, address)
 		if err != nil {
 			t.Fatal(err)
 		}
+		t.Cleanup(func() { _ = admin.Close() })
+		if len(admin.urls) != 1 {
+			t.Fatalf("explicit IP must have one listener: %v", admin.urls)
+		}
+		adminURL := admin.urls[0]
 		if _, ok := admin.server.Handler.(*leaderboardAdmin); !ok {
 			t.Fatal("wrong listener handler")
 		}
-		advertised, err := url.Parse(admin.url)
-		if err != nil || advertised.Scheme != "http" || advertised.Hostname() != "localhost" || advertised.Port() == "" || advertised.Port() == "0" {
-			t.Fatalf("invalid startup URL %q for %q", admin.url, address)
+		advertised, err := url.Parse(adminURL)
+		host, _, _ := net.SplitHostPort(address)
+		if err != nil || advertised.Scheme != "http" || advertised.Hostname() != host || advertised.Port() == "" || advertised.Port() == "0" {
+			t.Fatalf("invalid startup URL %q for %q", adminURL, address)
+		}
+		client := &http.Client{Transport: &http.Transport{DisableKeepAlives: true}, Timeout: time.Second}
+		response, err := client.Get(adminURL)
+		if err != nil {
+			t.Fatalf("GET advertised URL %q: %v", adminURL, err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("GET advertised URL %q: status %d", adminURL, response.StatusCode)
 		}
 		if err := admin.Close(); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestLeaderboardAdminLocalhostServesBothLoopbacks(t *testing.T) {
+	admin, err := startLeaderboardAdmin(&testLeaderboardAdminBackend{}, "localhost:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = admin.Close() })
+	if len(admin.urls) != 2 {
+		t.Fatalf("localhost must have two listeners: %v", admin.urls)
+	}
+	advertised, err := url.Parse(admin.urls[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, host := range []string{"127.0.0.1", "::1"} {
+		bound, err := url.Parse(admin.urls[index])
+		if err != nil || bound.Hostname() != host || bound.Port() != advertised.Port() {
+			t.Fatalf("unexpected bound address: %q", admin.urls[index])
+		}
+	}
+	var csrfToken string
+	for _, network := range []string{"tcp4", "tcp6"} {
+		t.Run(network, func(t *testing.T) {
+			transport := &http.Transport{
+				DisableKeepAlives: true,
+				DialContext: func(ctx context.Context, _, address string) (net.Conn, error) {
+					return (&net.Dialer{}).DialContext(ctx, network, address)
+				},
+			}
+			client := &http.Client{Transport: transport, Timeout: time.Second}
+			response, err := client.Get("http://" + net.JoinHostPort("localhost", advertised.Port()) + "/api/leaderboard")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("status %d", response.StatusCode)
+			}
+			var body struct{ CSRFToken string }
+			if err := json.NewDecoder(response.Body).Decode(&body); err != nil || body.CSRFToken == "" {
+				t.Fatalf("missing CSRF token: %v", err)
+			}
+			if csrfToken != "" && csrfToken != body.CSRFToken {
+				t.Fatal("listeners do not share the same admin handler")
+			}
+			csrfToken = body.CSRFToken
+		})
+	}
+	if err := admin.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range admin.urls {
+		bound, _ := url.Parse(raw)
+		connection, err := net.DialTimeout("tcp", bound.Host, time.Second)
+		if err == nil {
+			connection.Close()
+			t.Fatalf("admin listener %q survived shutdown", raw)
+		}
+	}
+}
+
+func TestLeaderboardAdminLocalhostBindFailureClosesFirstListener(t *testing.T) {
+	blocker, err := net.Listen("tcp6", "[::1]:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer blocker.Close()
+	port := strconv.Itoa(blocker.Addr().(*net.TCPAddr).Port)
+	ipv4 := net.JoinHostPort("127.0.0.1", port)
+	probe, err := net.Listen("tcp4", ipv4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe.Close()
+	admin, err := startLeaderboardAdmin(&testLeaderboardAdminBackend{}, net.JoinHostPort("localhost", port))
+	if err == nil {
+		admin.Close()
+		t.Fatal("started despite occupied IPv6 port")
+	}
+	if !strings.Contains(err.Error(), blocker.Addr().String()) {
+		t.Fatalf("error does not identify the failed bind: %v", err)
+	}
+	released, err := net.Listen("tcp4", ipv4)
+	if err != nil {
+		t.Fatalf("IPv4 listener leaked after IPv6 failure: %v", err)
+	}
+	released.Close()
+}
+
+func TestLeaderboardAdminImmediateCloseReleasesBothListeners(t *testing.T) {
+	admin, err := startLeaderboardAdmin(&testLeaderboardAdminBackend{}, "LOCALHOST:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = admin.Close() })
+	if len(admin.urls) != 2 {
+		t.Fatalf("localhost must have two listeners: %v", admin.urls)
+	}
+	if err := admin.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range admin.urls {
+		bound, _ := url.Parse(raw)
+		listener, err := net.Listen("tcp", bound.Host)
+		if err != nil {
+			t.Fatalf("listener %q remains reserved after Close: %v", raw, err)
+		}
+		listener.Close()
 	}
 }

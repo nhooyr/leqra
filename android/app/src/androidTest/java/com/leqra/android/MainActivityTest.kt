@@ -62,13 +62,7 @@ class MainActivityTest {
             }
             .commit()
         val activity = startActivity()
-        val education =
-            UiDevice.getInstance(instrumentation).findObject(UiSelector().text("Got it"))
-        if (education.waitForExists(500)) education.click()
-        await("The expected window handles input") {
-            if (showTour) quickTour(activity)?.window?.decorView?.hasWindowFocus() == true
-            else activity.hasWindowFocus()
-        }
+        awaitWindowFocus(activity, showTour)
         val namesDeadline = SystemClock.elapsedRealtime() + 15000
         while (
             main {
@@ -89,6 +83,40 @@ class MainActivityTest {
                 SystemClock.elapsedRealtime() < orientationDeadline
         ) SystemClock.sleep(30)
         return activity
+    }
+
+    private fun awaitWindowFocus(activity: MainActivity, showTour: Boolean) {
+        val device = UiDevice.getInstance(instrumentation)
+        val deadline = SystemClock.elapsedRealtime() + 30000
+        while (SystemClock.elapsedRealtime() < deadline) {
+            if (
+                main {
+                    if (showTour) quickTour(activity)?.window?.decorView?.hasWindowFocus() == true
+                    else activity.hasWindowFocus()
+                }
+            )
+                return
+            // Cold CI emulators can leave System UI's ANR dialog above the app.
+            // Only dismiss that system dialog; an ANR in leqra must still fail.
+            val close = device.findObject(UiSelector().resourceId("android:id/aerr_close"))
+            val systemUiError =
+                device.findObject(
+                    UiSelector()
+                        .packageName("android")
+                        .resourceId("android:id/alertTitle")
+                        .textContains("System UI"),
+                )
+            if (close.exists() && systemUiError.exists()) {
+                close.click()
+            }
+            device.executeShellCommand("cmd statusbar collapse")
+            val education = device.findObject(UiSelector().text("Got it"))
+            if (education.exists()) education.click()
+            SystemClock.sleep(20)
+        }
+        throw AssertionError(
+            "The expected window handles input\n" + device.executeShellCommand("dumpsys window"),
+        )
     }
 
     private fun startActivity(invite: Uri? = null): MainActivity {
@@ -224,7 +252,7 @@ class MainActivityTest {
             val instructions =
                 listOf(
                     "Drag the left stick to drive. Touch near your tank to aim without moving.",
-                    "Drag the center of Fire to aim without shooting. Tap the center to shoot on release, or hold the outer area for continuous fire.",
+                    "Drag the center of Fire to aim without shooting. Tap to shoot, or hold still to fire continuously. Drive with the joystick while aiming the turret independently with Fire.",
                     "Destroy the stationary tank to score a point.",
                 )
             fun point(name: String): Float =
@@ -2055,6 +2083,301 @@ class MainActivityTest {
     }
 
     @Test
+    fun generatedPilotColorsAvoidOtherPilotAndBots() {
+        org.junit.Assume.assumeNotNull(testServer)
+        val activity = launch()
+        try {
+            val session = main { state(activity) }
+            fun checkColors() = main {
+                assertNotEquals(session.colorIndex, session.localColorIndex)
+                assertTrue(
+                    session.localBots.none {
+                        it.colorIndex == session.colorIndex ||
+                            it.colorIndex == session.localColorIndex
+                    },
+                )
+            }
+            checkColors()
+            for (seat in 0..1) {
+                val beforeName = main { if (seat == 0) session.callsign else session.localCallsign }
+                val beforeColor = main {
+                    if (seat == 0) session.colorIndex else session.localColorIndex
+                }
+                main { session.generateCallsign(seat) }
+                await("The generated pilot name changes") {
+                    (if (seat == 0) session.callsign else session.localCallsign) != beforeName
+                }
+                assertNotEquals(
+                    beforeColor,
+                    main { if (seat == 0) session.colorIndex else session.localColorIndex },
+                )
+                checkColors()
+            }
+            val colors = main { listOf(session.colorIndex, session.localColorIndex) }
+            val prefs = instrumentation.targetContext.getSharedPreferences("leqra-settings", 0)
+            assertEquals(colors, listOf(prefs.getInt("color", -1), prefs.getInt("localColor", -1)))
+        } finally {
+            main { activity.finish() }
+        }
+    }
+
+    @Test
+    fun onlineTurretAimAndFireUseIndependentHeadings() {
+        org.junit.Assume.assumeNotNull(testServer)
+        val activity = launch()
+        val reports = org.json.JSONArray()
+        try {
+            val session = main { state(activity) }
+            var serial = 200_000
+            for (mode in listOf("infinity", "elimination")) {
+                main {
+                    session.leave()
+                    session.publicSelected = false
+                    session.localSelected = false
+                    session.botCount = 1
+                    session.selectMode(mode)
+                    session.share()
+                }
+                await("The real room connection is ready") {
+                    session.network.connected && session.roomCode != null && session.room != null
+                }
+                main { session.play() }
+                awaitPlaying(activity)
+                val name = main { session.callsign }
+                val code = main { session.roomCode }
+                fun fixture(
+                    open: Boolean = true,
+                    ghost: Boolean = false,
+                    read: Boolean = false,
+                ): org.json.JSONObject {
+                    val body =
+                        org.json
+                            .JSONObject()
+                            .put("name", name)
+                            .put("code", code)
+                            .put("infinity", mode == "infinity")
+                            .put("open", open)
+                            .put("ghost", ghost)
+                            .put("gap", if (ghost) 1 else 0)
+                            .put("bodyAngle", if (ghost) Math.PI / 2 else 0)
+                            .put("read", read)
+                            .put("serial", if (read) serial else ++serial)
+                    val connection =
+                        java.net.URL("$server/_fixture/muzzle").openConnection()
+                            as java.net.HttpURLConnection
+                    connection.requestMethod = "POST"
+                    connection.connectTimeout = 5000
+                    connection.readTimeout = 5000
+                    connection.doOutput = true
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    return try {
+                        connection.outputStream.use { it.write(body.toString().toByteArray()) }
+                        check(connection.responseCode == 200) {
+                            "Fixture HTTP ${connection.responseCode}"
+                        }
+                        org.json.JSONObject(
+                            connection.inputStream.bufferedReader().use { it.readText() },
+                        )
+                    } finally {
+                        connection.disconnect()
+                    }
+                }
+                fun serverState(
+                    message: String,
+                    ready: (org.json.JSONObject) -> Boolean,
+                ): org.json.JSONObject {
+                    val deadline = SystemClock.elapsedRealtime() + 5000
+                    var last = fixture(read = true)
+                    while (!ready(last) && SystemClock.elapsedRealtime() < deadline) {
+                        SystemClock.sleep(20)
+                        last = fixture(read = true)
+                    }
+                    assertTrue("$message: $last", ready(last))
+                    return last
+                }
+                for (landscape in listOf(false, true)) {
+                    main {
+                        activity.requestedOrientation =
+                            if (landscape) ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                            else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    }
+                    await("The requested orientation is active") {
+                        activity.resources.configuration.orientation ==
+                            if (landscape) android.content.res.Configuration.ORIENTATION_LANDSCAPE
+                            else android.content.res.Configuration.ORIENTATION_PORTRAIT
+                    }
+                    val view = main {
+                        MainActivity::class.java.getDeclaredField("arena").run {
+                            isAccessible = true
+                            get(activity) as NativeArenaView
+                        }
+                    }
+                    main { view.resetControls() }
+                    val start = fixture()
+                    await("The native client receives the arranged server position") {
+                        session.authoritativeSnapshot.tanks.any {
+                            it.id == session.localID &&
+                                it.spawnSerial == serial &&
+                                abs(it.x - start.getDouble("x")) < 1 &&
+                                abs(it.y - start.getDouble("y")) < 1
+                        }
+                    }
+                    val density = view.resources.displayMetrics.density
+                    fun point(name: String): Float = main {
+                        NativeArenaView::class.java.getDeclaredField(name).run {
+                            isAccessible = true
+                            getFloat(view) * density
+                        }
+                    }
+                    data class Finger(val id: Int, val x: Float, val y: Float)
+                    val fire = Finger(10, point("fireX"), point("fireY"))
+                    val aimed = fire.copy(y = fire.y - 32 * density)
+                    val stick = Finger(20, point("stickX") + 24 * density, point("stickY"))
+                    val down = SystemClock.uptimeMillis()
+                    fun touch(action: Int, vararg fingers: Finger) = main {
+                        val properties =
+                            fingers
+                                .map { finger ->
+                                    MotionEvent.PointerProperties().apply {
+                                        id = finger.id
+                                        toolType = MotionEvent.TOOL_TYPE_FINGER
+                                    }
+                                }
+                                .toTypedArray()
+                        val coordinates =
+                            fingers
+                                .map { finger ->
+                                    MotionEvent.PointerCoords().apply {
+                                        x = finger.x
+                                        y = finger.y
+                                        pressure = 1f
+                                        size = 1f
+                                    }
+                                }
+                                .toTypedArray()
+                        val event =
+                            MotionEvent.obtain(
+                                down,
+                                SystemClock.uptimeMillis(),
+                                action,
+                                fingers.size,
+                                properties,
+                                coordinates,
+                                0,
+                                0,
+                                1f,
+                                1f,
+                                0,
+                                0,
+                                InputDevice.SOURCE_TOUCHSCREEN,
+                                0,
+                            )
+                        try {
+                            assertTrue(view.onTouchEvent(event))
+                        } finally {
+                            event.recycle()
+                        }
+                    }
+                    touch(MotionEvent.ACTION_DOWN, fire)
+                    touch(MotionEvent.ACTION_MOVE, aimed)
+                    touch(
+                        MotionEvent.ACTION_POINTER_DOWN or
+                            (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT),
+                        aimed,
+                        stick,
+                    )
+                    SystemClock.sleep(500)
+                    val driving =
+                        serverState("Server keeps drive and aim independent") {
+                            val input = it.optJSONObject("input")
+                            input != null &&
+                                input.optDouble("stickX") > .1 &&
+                                input.optDouble("aimY") < -.9
+                        }
+                    assertTrue(driving.getDouble("x") > start.getDouble("x") + 10)
+                    assertEquals(start.getDouble("y"), driving.getDouble("y"), .1)
+                    assertEquals(0.0, driving.getDouble("bodyAngle"), .01)
+                    assertEquals(-Math.PI / 2, driving.getDouble("angle"), .01)
+                    assertEquals(0, driving.getInt("shots"))
+                    assertFalse(driving.getJSONObject("input").getBoolean("fire"))
+                    touch(
+                        MotionEvent.ACTION_POINTER_UP or
+                            (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT),
+                        aimed,
+                        stick,
+                    )
+                    touch(MotionEvent.ACTION_UP, aimed)
+                    fixture()
+                    serverState("Retained aim reaches the fresh server pose") {
+                        it.optBoolean("independentAim") &&
+                            abs(it.getDouble("angle") + Math.PI / 2) < .01
+                    }
+                    touch(MotionEvent.ACTION_DOWN, fire)
+                    touch(MotionEvent.ACTION_UP, fire)
+                    val fired =
+                        serverState("A real tap creates a server projectile") {
+                            it.getInt("shots") > 0
+                        }
+                    val bullet = fired.getJSONArray("bullets").getJSONObject(0)
+                    assertTrue(bullet.getDouble("vy") < 0)
+                    assertEquals(0.0, bullet.getDouble("vx"), .001)
+                    assertEquals(fired.getDouble("x"), bullet.getDouble("x"), .01)
+                    assertTrue(bullet.getDouble("y") < fired.getDouble("y") - 20)
+                    touch(MotionEvent.ACTION_DOWN, fire)
+                    SystemClock.sleep(750)
+                    val held =
+                        serverState("Holding the center fires continuously online") {
+                            it.getInt("shots") >= fired.getInt("shots") + 2
+                        }
+                    touch(MotionEvent.ACTION_UP, fire)
+                    touch(MotionEvent.ACTION_DOWN, fire)
+                    touch(MotionEvent.ACTION_MOVE, fire.copy(x = fire.x + 32 * density))
+                    touch(MotionEvent.ACTION_UP, fire.copy(x = fire.x + 32 * density))
+                    val wallSetup = fixture(open = false, ghost = true)
+                    serverState("The independent turret aims across the Ghost wall") {
+                        it.optBoolean("independentAim") &&
+                            abs(it.getDouble("bodyAngle") - Math.PI / 2) < .01 &&
+                            abs(it.getDouble("angle")) < .01
+                    }
+                    touch(MotionEvent.ACTION_DOWN, fire)
+                    touch(MotionEvent.ACTION_UP, fire)
+                    val ghost =
+                        serverState("Ghost fires from the wall-facing barrel") {
+                            it.getInt("shots") > 0
+                        }
+                    val reflected = ghost.getJSONArray("bullets").getJSONObject(0)
+                    assertTrue(reflected.getDouble("vx") < 0)
+                    assertEquals(0.0, reflected.getDouble("vy"), .001)
+                    assertTrue(reflected.getInt("bounces") > 0)
+                    assertTrue(reflected.getDouble("x") < wallSetup.getDouble("wallX"))
+                    reports.put(
+                        org.json
+                            .JSONObject()
+                            .put("mode", mode)
+                            .put("landscape", landscape)
+                            .put("driving", driving)
+                            .put("fired", fired)
+                            .put("held", held)
+                            .put("ghost", ghost),
+                    )
+                    screenshot("online-turret-$mode-${if (landscape) "landscape" else "portrait"}")
+                    main { view.resetControls() }
+                }
+            }
+            File(
+                    instrumentation.targetContext.getExternalFilesDir(null),
+                    "online-turret-checks.json",
+                )
+                .writeText(reports.toString(2))
+        } finally {
+            main {
+                state(activity).leave()
+                activity.finish()
+            }
+        }
+    }
+
+    @Test
     fun fireDragAimsInPlaceInBothLayouts() {
         for (mode in listOf("infinity", "elimination")) {
             val activity = launch()
@@ -2111,10 +2434,35 @@ class MainActivityTest {
                     assertFalse(session.input.snapAim)
                     touch(MotionEvent.ACTION_MOVE, 0f, -32f)
                     assertFalse(session.input.fire)
-                    assertTrue(session.input.aimOnly)
-                    assertTrue(session.input.snapAim)
+                    assertFalse(session.input.aimOnly)
+                    assertFalse(session.input.snapAim)
                     assertEquals(0.0, session.input.stickX, .001)
-                    assertEquals(-1.0, session.input.stickY, .001)
+                    assertEquals(-1.0, session.input.aimY, .001)
+                    val touchControls =
+                        NativeArenaView::class.java.getDeclaredField("touchControls").run {
+                            isAccessible = true
+                            get(view) as GameInput
+                        }
+                    val stickPointer =
+                        NativeArenaView::class.java.getDeclaredField("stickPointer").apply {
+                            isAccessible = true
+                        }
+                    stickPointer.setInt(view, 7)
+                    touchControls.stickX = .6
+                    touchControls.stickY = 0.0
+                    view.onInput?.invoke(view.input.copy())
+                    assertFalse(
+                        "The joystick keeps moving while Fire steers",
+                        session.input.aimOnly,
+                    )
+                    assertFalse(session.input.snapAim)
+                    assertEquals(.6, session.input.stickX, .001)
+                    assertEquals(0.0, session.input.stickY, .001)
+                    assertEquals(-1.0, session.input.aimY, .001)
+                    stickPointer.setInt(view, -1)
+                    touchControls.stickX = 0.0
+                    view.onInput?.invoke(view.input.copy())
+                    assertFalse(session.input.aimOnly)
                     assertEquals(-24f, coordinate("fireCrosshairY") / density, .001f)
                     val bitmap =
                         Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
@@ -2129,12 +2477,12 @@ class MainActivityTest {
                         bitmap.recycle()
                     }
                     touch(MotionEvent.ACTION_MOVE)
-                    assertEquals(-1.0, session.input.stickY, .001)
+                    assertEquals(-1.0, session.input.aimY, .001)
                     touch(MotionEvent.ACTION_UP)
                     assertFalse(session.input.fire)
                     assertEquals(0f, coordinate("fireCrosshairX"), .001f)
                     assertEquals(0f, coordinate("fireCrosshairY"), .001f)
-                    assertEquals(-1.0, session.input.stickY, .001)
+                    assertEquals(-1.0, session.input.aimY, .001)
                     assertFalse("Center dragging never sends a fire edge", observed.any { it })
                     observed.clear()
                     touch(MotionEvent.ACTION_DOWN)
@@ -2155,9 +2503,49 @@ class MainActivityTest {
                     assertTrue(session.input.fire)
                     touch(MotionEvent.ACTION_MOVE, 32f, -32f)
                     assertTrue(session.input.fire)
-                    assertTrue(session.input.snapAim)
+                    assertFalse(session.input.snapAim)
                     touch(MotionEvent.ACTION_UP, 32f, -32f)
                     assertFalse(session.input.fire)
+                }
+                fun centerTouch(action: Int) = main {
+                    val view =
+                        MainActivity::class.java.getDeclaredField("arena").run {
+                            isAccessible = true
+                            get(activity) as NativeArenaView
+                        }
+                    fun coordinate(name: String) =
+                        NativeArenaView::class.java.getDeclaredField(name).run {
+                            isAccessible = true
+                            getFloat(view) * view.resources.displayMetrics.density
+                        }
+                    val now = SystemClock.uptimeMillis()
+                    val event =
+                        MotionEvent.obtain(
+                            now,
+                            now,
+                            action,
+                            coordinate("fireX"),
+                            coordinate("fireY"),
+                            0,
+                        )
+                    try {
+                        assertTrue(view.onTouchEvent(event))
+                    } finally {
+                        event.recycle()
+                    }
+                }
+                centerTouch(MotionEvent.ACTION_DOWN)
+                SystemClock.sleep(220)
+                main {
+                    assertTrue("Holding the center keeps Fire down", state(activity).input.fire)
+                }
+                centerTouch(MotionEvent.ACTION_UP)
+                main { assertFalse(state(activity).input.fire) }
+                centerTouch(MotionEvent.ACTION_DOWN)
+                centerTouch(MotionEvent.ACTION_CANCEL)
+                SystemClock.sleep(220)
+                main {
+                    assertFalse("Cancellation clears the delayed hold", state(activity).input.fire)
                 }
             } finally {
                 main { activity.finish() }

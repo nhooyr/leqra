@@ -163,8 +163,10 @@ from a running server.
 
 ## Local administration
 
-The separate admin UI starts at `http://127.0.0.1:8081` by default, including with
-`./dev.sh`. `LEQRA_ADMIN_ADDR` can select another loopback address/port, or `off`.
+The separate admin UI starts at `http://localhost:8081` by default, including with
+`./dev.sh`, listening on both IPv4 and IPv6 loopback addresses. `LEQRA_ADMIN_ADDR`
+can select another `localhost:PORT` for both families, an explicit loopback IP/port
+for one family, or `off`.
 It does not expose routes on the public game listener. To use the production UI,
 forward that loopback port through SSH and open the local forwarded address.
 See [the admin UI guide](leaderboard-admin.md) for the forwarding command.

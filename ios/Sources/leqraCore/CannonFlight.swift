@@ -266,6 +266,7 @@ final class CannonFlightPresenter {
         replacements.reserveCapacity(active.count)
         for (id, var value) in active {
             let flight = value.flight
+            let clock = isLocal(flight.owner) ? self.authorityTick : tick
             if value.endpointShown {
                 // A coalesced packet may contain shield contact followed by a
                 // lethal contact at a different pose. Hold the later endpoint
@@ -277,9 +278,9 @@ final class CannonFlightPresenter {
                 }
                 continue
             }
-            guard tick >= flight.startTick else { continue }
+            guard clock >= flight.startTick else { continue }
             let short = flight.endTick - flight.startTick < 3
-            if value.replayBegan == nil, !value.displayed, short || tick > flight.endTick {
+            if value.replayBegan == nil, !value.displayed, short || clock > flight.endTick {
                 value.replayBegan = now
                 value.replayStart = short ? flight.startTick : max(flight.startTick, flight.endTick - 3)
             }
@@ -291,8 +292,8 @@ final class CannonFlightPresenter {
                     tick: start + (flight.endTick - start) * fraction, instantaneousFraction: fraction)
                 if fraction == 1 { value.endpointShown = true }
             } else {
-                replacements[id] = flight.sample(tick: tick)
-                if tick >= flight.endTick { value.endpointShown = true }
+                replacements[id] = flight.sample(tick: clock)
+                if clock >= flight.endTick { value.endpointShown = true }
             }
             value.displayed = true
             active[id] = value
@@ -303,7 +304,7 @@ final class CannonFlightPresenter {
             let contact = pending.contact
             if contact.projectileId > 0, active[contact.projectileId] != nil { continue }
             guard firstContactByTarget[contact.target] == id else { continue }
-            let clock = contact.projectileId == 0 && isLocal(pending.effect.owner) ? self.authorityTick : tick
+            let clock = isLocal(pending.effect.owner) ? self.authorityTick : tick
             guard completed.contains(contact.projectileId) || clock >= contact.tick else { continue }
             if contact.projectileId > 0, completed.contains(contact.projectileId) {
                 contacts.removeValue(forKey: id)
@@ -379,12 +380,13 @@ final class CannonFlightPresenter {
                 continue
             }
             let contact = pending.contact
+            let clock = isLocal(pending.effect.owner) ? authorityTick : playbackTick
             var visual = contact.before.applying(to: tanks[index])
             if !isLocal(tanks[index].id), let old = previous[visual.id], old.hp > 0,
                 old.spawnSerial == visual.spawnSerial, let previousTick, contact.tick > previousTick,
-                playbackTick < contact.tick, pathClear?(old, visual) != false
+                clock < contact.tick, pathClear?(old, visual) != false
             {
-                let fraction = min(1, max(0, (playbackTick - previousTick) / (contact.tick - previousTick)))
+                let fraction = min(1, max(0, (clock - previousTick) / (contact.tick - previousTick)))
                 visual.x = old.x + (visual.x - old.x) * fraction
                 visual.y = old.y + (visual.y - old.y) * fraction
                 visual.angle =
@@ -420,10 +422,7 @@ final class CannonFlightPresenter {
             {
                 return false
             }
-            let ownInstant =
-                isLocal(effect.owner)
-                && (effect.kind == "laser" || effect.kind == "shot:laser"
-                    || effect.contact?.projectileId == 0)
+            let ownInstant = isLocal(effect.owner)
             return effect.tick.map { Double($0) <= (ownInstant ? authorityTick : playbackTick) + 1e-7 }
                 ?? true
         }

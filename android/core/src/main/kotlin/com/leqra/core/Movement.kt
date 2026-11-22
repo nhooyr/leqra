@@ -64,16 +64,22 @@ object TankMovement {
             tank.y = p.y
         }
         val stacks = effectiveSpeedStacks(tank)
-        val steering = steer(tank.angle, input, 1 + .25 * stacks, dt)
-        tank.angle = steering.angle
+        val steering = steer(tank.movementAngle, input, 1 + .25 * stacks, dt)
+        applyAim(tank, input, steering.angle)
         val speed = 128 * (1 + .65 * stacks)
         val oldX = tank.x
         val oldY = tank.y
-        val dx = cos(tank.angle) * speed * steering.throttle * dt
-        val dy = sin(tank.angle) * speed * steering.throttle * dt
+        val dx = cos(steering.angle) * speed * steering.throttle * dt
+        val dy = sin(steering.angle) * speed * steering.throttle * dt
         if (tank.ghostTime > 0 || !maze.blocked(tank.x + dx, tank.y, 17.0)) tank.x += dx
         if (tank.ghostTime > 0 || !maze.blocked(tank.x, tank.y + dy, 17.0)) tank.y += dy
         tank.track += hypot(tank.x - oldX, tank.y - oldY)
+    }
+
+    private fun applyAim(tank: ArenaTank, input: GameInput, bodyAngle: Double) {
+        tank.independentAim = hypot(input.aimX, input.aimY) > .1
+        tank.bodyAngle = if (tank.independentAim) bodyAngle else 0.0
+        tank.angle = if (tank.independentAim) atan2(input.aimY, input.aimX) else bodyAngle
     }
 
     private inline fun equipment(
@@ -103,14 +109,14 @@ object TankMovement {
             return
         equipment(tank, dt, ageStarman) { finishGhost(tank, walls, width, height) }
         val stacks = effectiveSpeedStacks(tank)
-        val steering = steer(tank.angle, input, 1 + .25 * stacks, dt)
-        tank.angle = steering.angle
+        val steering = steer(tank.movementAngle, input, 1 + .25 * stacks, dt)
+        applyAim(tank, input, steering.angle)
         val speed = 128 * (1 + .65 * stacks)
         val x = tank.x
         val y = tank.y
-        tank.x += cos(tank.angle) * speed * steering.throttle * dt
+        tank.x += cos(steering.angle) * speed * steering.throttle * dt
         if (tank.ghostTime == 0.0) resolveWalls(tank, walls)
-        tank.y += sin(tank.angle) * speed * steering.throttle * dt
+        tank.y += sin(steering.angle) * speed * steering.throttle * dt
         if (tank.ghostTime == 0.0) resolveWalls(tank, walls)
         tank.x = tank.x.coerceIn(21.0, width - 21)
         tank.y = tank.y.coerceIn(21.0, height - 21)
@@ -238,6 +244,15 @@ object TankMovement {
                     tank.y >= 21 &&
                     tank.y <= world.height - 21))
 
+    fun blendBody(result: ArenaTank, first: ArenaTank, second: ArenaTank, fraction: Double) {
+        result.independentAim = first.independentAim || second.independentAim
+        result.bodyAngle =
+            if (result.independentAim)
+                first.movementAngle +
+                    angleDelta(second.movementAngle, first.movementAngle) * fraction
+            else 0.0
+    }
+
     fun presentation(
         tank: ArenaTank,
         input: GameInput,
@@ -260,12 +275,14 @@ object TankMovement {
         )
             return tank.copy().also { move(it, input, alpha * tick) }
         if (effectiveSpeedStacks(tank) != effectiveSpeedStacks(next))
-            return tank.copy(
-                x = tank.x + (next.x - tank.x) * alpha,
-                y = tank.y + (next.y - tank.y) * alpha,
-                angle = tank.angle + angleDelta(next.angle, tank.angle) * alpha,
-                track = tank.track + (next.track - tank.track) * alpha,
-            )
+            return tank
+                .copy(
+                    x = tank.x + (next.x - tank.x) * alpha,
+                    y = tank.y + (next.y - tank.y) * alpha,
+                    angle = tank.angle + angleDelta(next.angle, tank.angle) * alpha,
+                    track = tank.track + (next.track - tank.track) * alpha,
+                )
+                .also { blendBody(it, tank, next, alpha) }
         var future = next.copy()
         move(future, input, tick)
         if (
@@ -329,6 +346,7 @@ object TankMovement {
             prior?.let { (angleDelta(tank.angle, it.angle) + angle) / 2 }
                 ?: (3 * angle - futureAngle) / 2
         result.angle = tank.angle + curve(0.0, angle, angleStart, (angle + futureAngle) / 2, true)
+        blendBody(result, tank, next, alpha)
         result.track = tank.track + (next.track - tank.track) * alpha
         if (!canInterpolate(tank, result)) {
             result.x = tank.x + (next.x - tank.x) * alpha

@@ -661,7 +661,7 @@ final class GameUITests: XCTestCase {
             if page == 1 {
                 XCTAssertEqual(
                     instructions.label,
-                    "Drag the center of Fire to aim without shooting. Tap the center to shoot on release, or hold the outer area for continuous fire."
+                    "Drag the center of Fire to aim without shooting. Tap to shoot, or hold still to fire continuously. Drive with the joystick while aiming the turret independently with Fire."
                 )
             }
             if page == 2 {
@@ -1275,6 +1275,8 @@ final class GameUITests: XCTestCase {
                     }, object: stage)
                 XCTAssertEqual(XCTWaiter.wait(for: [aimed], timeout: 5), .completed)
                 let after = telemetry()
+                XCTAssertEqual(
+                    try XCTUnwrap(after["bodyAngle"]), try XCTUnwrap(before["bodyAngle"]), accuracy: 0.0001)
                 XCTAssertEqual(after["crosshairX"], 0)
                 XCTAssertEqual(after["crosshairY"], 0)
                 XCTAssertEqual(try XCTUnwrap(after["x"]), try XCTUnwrap(before["x"]), accuracy: 0.0001)
@@ -1291,6 +1293,33 @@ final class GameUITests: XCTestCase {
             let tapped = XCTNSPredicateExpectation(
                 predicate: NSPredicate { _, _ in (telemetry()["bullets"] ?? 0) > 0 }, object: stage)
             XCTAssertEqual(XCTWaiter.wait(for: [tapped], timeout: 5), .completed)
+            if fixed {
+                let fired = telemetry()
+                let angle = try XCTUnwrap(fired["angle"])
+                let dx = try XCTUnwrap(fired["shotX"]) - XCTUnwrap(fired["x"])
+                let dy = try XCTUnwrap(fired["shotY"]) - XCTUnwrap(fired["y"])
+                let vx = try XCTUnwrap(fired["shotVX"])
+                let vy = try XCTUnwrap(fired["shotVY"])
+                XCTAssertGreaterThan(dx * cos(angle) + dy * sin(angle), 25)
+                XCTAssertEqual(dx * sin(angle) - dy * cos(angle), 0, accuracy: 0.01)
+                XCTAssertEqual(atan2(vy, vx), angle, accuracy: 0.01)
+                let stick = app.coordinate(withNormalizedOffset: .zero).withOffset(
+                    CGVector(
+                        dx: stage.frame.minX + (fired["driveX"] ?? 0),
+                        dy: stage.frame.maxY - (fired["driveY"] ?? 0)))
+                stick.press(
+                    forDuration: 0.05, thenDragTo: stick.withOffset(CGVector(dx: 32, dy: 0)),
+                    withVelocity: .slow, thenHoldForDuration: 0.35)
+                let driven = telemetry()
+                XCTAssertGreaterThan(try XCTUnwrap(driven["x"]), try XCTUnwrap(fired["x"]) + 5)
+                XCTAssertEqual(try XCTUnwrap(driven["y"]), try XCTUnwrap(fired["y"]), accuracy: 0.01)
+                XCTAssertEqual(try XCTUnwrap(driven["angle"]), angle, accuracy: 0.01)
+                XCTAssertEqual(try XCTUnwrap(driven["bodyAngle"]), 0, accuracy: 0.01)
+            }
+            let beforeHold = telemetry()["bullets"] ?? 0
+            fire.press(forDuration: 0.8)
+            XCTAssertGreaterThan(
+                telemetry()["bullets"] ?? 0, beforeHold + 1, "Holding the center fires continuously")
             fire.withOffset(CGVector(dx: 30, dy: 0)).press(forDuration: 0.6)
             XCTAssertGreaterThan(telemetry()["bullets"] ?? 0, 1, "The outer area retains continuous firing")
             capture(app, name: "Fire drag aim " + (fixed ? "fixed" : "Infinity"))

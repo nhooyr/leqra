@@ -26,10 +26,15 @@ func (s *infiniteServer) rotateAccount(oldToken, newToken string) (onlineAccount
 
 func (s *infiniteServer) rotateAccountState(oldToken, newToken string) (onlineAccountRotation, error) {
 	oldHash, oldValid := publicTokenHash(oldToken)
-	newHash, newValid := publicTokenHash(newToken)
 	if !oldValid {
 		return onlineAccountRotation{}, errOnlineOwnerInvalid
 	}
+	return s.rotateAccountHash(oldHash, newToken)
+}
+
+// The loopback admin can recover an account without possessing its old bearer.
+func (s *infiniteServer) rotateAccountHash(oldHash, newToken string) (onlineAccountRotation, error) {
+	newHash, newValid := publicTokenHash(newToken)
 	if !newValid || oldHash == newHash {
 		return onlineAccountRotation{}, errNewAccountKeyInvalid
 	}
@@ -136,7 +141,7 @@ func (s *infiniteServer) rotateAccountState(oldToken, newToken string) (onlineAc
 	var retired []infiniteConnection
 	transports := make(map[*Client]int)
 	for client, connection := range s.connections {
-		if connection.observer != nil && connection.seat.PublicToken == oldToken {
+		if connection.observer != nil && accountTokenHasHash(connection.seat.PublicToken, oldHash) {
 			delete(s.connections, client)
 			retired = append(retired, connection)
 			transports[client] = 0
@@ -161,7 +166,7 @@ func (s *infiniteServer) rotateAccountState(oldToken, newToken string) (onlineAc
 		transports[client] = seat
 	}
 	for key, reservation := range s.reservations {
-		if reservation.connection.observer != nil && reservation.connection.seat.PublicToken == oldToken {
+		if reservation.connection.observer != nil && accountTokenHasHash(reservation.connection.seat.PublicToken, oldHash) {
 			delete(s.reservations, key)
 			retired = append(retired, reservation.connection)
 			continue
@@ -172,14 +177,14 @@ func (s *infiniteServer) rotateAccountState(oldToken, newToken string) (onlineAc
 		}
 	}
 	for key := range s.publicPending {
-		if key.seat.PublicToken == oldToken || func() bool {
+		if accountTokenHasHash(key.seat.PublicToken, oldHash) || func() bool {
 			local := roomLocalController(key.room.room, key.seat)
-			return local != nil && local.PublicToken == oldToken
+			return local != nil && accountTokenHasHash(local.PublicToken, oldHash)
 		}() {
 			s.dropPublicPending(key)
 		}
 	}
-	for client, seat := range h.revokeAccountLocked(oldToken, time.Now()) {
+	for client, seat := range h.revokeAccountHashLocked(oldHash, time.Now()) {
 		transports[client] = seat
 	}
 	unlock()
@@ -203,7 +208,7 @@ func (s *infiniteServer) rotateAccountState(oldToken, newToken string) (onlineAc
 // Called with Hub.mu held, after the durable key rotation commits. Expire the
 // old seats rather than rewriting their owner: a copied private room token must
 // never be able to resume and learn the replacement account key.
-func (h *Hub) revokeAccountLocked(token string, now time.Time) map[*Client]int {
+func (h *Hub) revokeAccountHashLocked(hash string, now time.Time) map[*Client]int {
 	if h.revokedRoomTokens == nil {
 		h.revokedRoomTokens = make(map[[32]byte]time.Time)
 	}
@@ -220,7 +225,7 @@ func (h *Hub) revokeAccountLocked(token string, now time.Time) map[*Client]int {
 	controllers := make(map[*Client]int)
 	for _, room := range h.rooms {
 		for _, player := range room.members() {
-			if player.PublicToken != token {
+			if !accountTokenHasHash(player.PublicToken, hash) {
 				continue
 			}
 			members = append(members, member{room, player})
@@ -245,7 +250,7 @@ func (h *Hub) revokeAccountLocked(token string, now time.Time) map[*Client]int {
 		}
 	}
 	for client := range h.clients {
-		if client.onlineOwnerToken == token {
+		if accountTokenHasHash(client.onlineOwnerToken, hash) {
 			controllers[client] = 0
 		}
 	}
@@ -267,4 +272,9 @@ func (h *Hub) revokeAccountLocked(token string, now time.Time) map[*Client]int {
 		h.broadcastState(room)
 	}
 	return controllers
+}
+
+func accountTokenHasHash(token, hash string) bool {
+	value, valid := publicTokenHash(token)
+	return valid && value == hash
 }

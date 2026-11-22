@@ -32,6 +32,8 @@ object ProtocolJson {
             x = json.number("x", 0.0),
             y = json.number("y", 0.0),
             angle = json.number("angle", 0.0),
+            bodyAngle = json.number("bodyAngle", 0.0),
+            independentAim = json.optBoolean("independentAim", false),
             hp = json.optInt("hp", 1),
             colorIndex = json.optInt("colorIndex", 0),
             score = json.optInt("score", 0),

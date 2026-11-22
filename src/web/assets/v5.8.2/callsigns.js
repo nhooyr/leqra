@@ -268,6 +268,13 @@
     botLabels = new Map()
   let hooks,
     editRevision = 0
+  const freshSeats = new Set()
+  function randomColor(current, avoiding, random = Math.random) {
+    const choices = Array.from({ length: 8 }, (_, i) => i).filter(
+      (i) => i !== current && !avoiding.includes(i),
+    )
+    return choices.length ? choices[Math.floor(random() * choices.length)] : current
+  }
   function read(key) {
     try {
       return localStorage.getItem(key) ?? memory.get(key) ?? null
@@ -389,6 +396,7 @@
       return saved
     }
     const name = randomName(seat)
+    freshSeats.add(seat)
     write(names[seat], name)
     write(pending[seat], JSON.stringify({ name, requestId: uuid(), auto: true }))
     return name
@@ -598,6 +606,7 @@
     node.hidden = !text
   }
   window.leqraCallsigns = Object.freeze({
+    randomColor,
     initial,
     restored,
     legacyDefault,
@@ -613,6 +622,8 @@
     revision: () => editRevision,
     init(value) {
       hooks = value
+      for (const seat of freshSeats) hooks.recolor?.(seat)
+      freshSeats.clear()
       Promise.resolve()
         .then(ensure)
         .catch(() => {})

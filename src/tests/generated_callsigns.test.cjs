@@ -114,6 +114,22 @@ function boot(storage = new Map(), protocol = "https:") {
   return { api, storage, field, form, status, pending, applied, remembered, models, hooks, answer, context }
 }
 const flush = () => new Promise((resolve) => setImmediate(resolve))
+test("new pilot colors avoid old paint, the other pilot, and bots, with a full-palette fallback", () => {
+  const h = boot()
+  const seen = new Set(Array.from({ length: 4 }, (_, i) => h.api.randomColor(0, [1, 2, 3], () => i / 4)))
+  assert.deepEqual(seen, new Set([4, 5, 6, 7]))
+  assert.equal(h.api.randomColor(2, [0, 1, 2, 3, 4, 5, 6, 7]), 2)
+})
+test("only fresh bootstrap identities request a new color", () => {
+  const first = boot(),
+    generated = []
+  first.api.init({ ...first.hooks, recolor: (seat) => generated.push(seat) })
+  assert.deepEqual(generated, [0, 1])
+  const restored = boot(first.storage),
+    repeated = []
+  restored.api.init({ ...restored.hooks, recolor: (seat) => repeated.push(seat) })
+  assert.deepEqual(repeated, [])
+})
 test("fresh P1/P2 defaults are distinct, durable random names and saved choices survive reload", () => {
   const h = boot()
   for (const name of h.models) assert.match(name, /^pilot#[A-HJ-NP-Z2-9]{6}$/)

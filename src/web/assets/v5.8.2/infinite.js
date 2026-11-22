@@ -439,12 +439,15 @@
       input.stickX = touchAim.x
       input.stickY = touchAim.y
       if (touchAim.assisted) input.touchAim = true
-      input.fire ||= firePointer !== null && !fireDrag?.center
+      input.fire ||= firePointer !== null && (!fireDrag?.center || fireDrag.firing)
       if (directAim.active) {
-        input.stickX = directAim.x
-        input.stickY = directAim.y
-        input.aimOnly = true
-        input.snapAim = true
+        if (directAim.independent) Object.assign(input, net.fireAimInput(directAim.x, directAim.y))
+        else {
+          input.stickX = directAim.x
+          input.stickY = directAim.y
+          input.aimOnly = true
+          input.snapAim = true
+        }
       }
     }
     if (seat === mouseSeat()) {
@@ -1595,13 +1598,18 @@
       Math.hypot(previous.x - current.x, previous.y - current.y) > CELL
     )
       return current
-    return {
-      ...current,
-      track: (previous.track || 0) + ((current.track || 0) - (previous.track || 0)) * alpha,
-      x: previous.x + (current.x - previous.x) * alpha,
-      y: previous.y + (current.y - previous.y) * alpha,
-      angle: previous.angle + angleOf(current.angle - previous.angle) * alpha,
-    }
+    return net.blendBody(
+      {
+        ...current,
+        track: (previous.track || 0) + ((current.track || 0) - (previous.track || 0)) * alpha,
+        x: previous.x + (current.x - previous.x) * alpha,
+        y: previous.y + (current.y - previous.y) * alpha,
+        angle: previous.angle + angleOf(current.angle - previous.angle) * alpha,
+      },
+      previous,
+      current,
+      alpha,
+    )
   }
 
   function offlineTankPose(world, tank, remaining) {
@@ -1715,7 +1723,7 @@
     ctx.translate(tank.x, tank.y)
     if (wreck) {
       ctx.save()
-      ctx.rotate(tank.angle)
+      ctx.rotate(net.bodyHeading(tank))
       ctx.globalAlpha = 0.6
       ctx.fillStyle = "#091116"
       art.rect(ctx, -18, -16, 36, 32, 5)
@@ -1755,7 +1763,7 @@
         })
       }
       ctx.save()
-      ctx.rotate(tank.angle)
+      ctx.rotate(net.bodyHeading(tank))
       if (tank.ghostTime > 0) ctx.globalAlpha = tank.starmanTime > 0 ? 0.84 : 0.58
       if (tank.speedTime > 0) {
         ctx.strokeStyle = powers.speed.color
@@ -1784,6 +1792,7 @@
         barrelRetraction: net.barrelRetraction(tank.recoil, wall?.fraction, clearance),
       }
       art.hull(skin, ctx, zoom, ratio)
+      ctx.rotate(tank.angle - net.bodyHeading(tank))
       art.turret(ctx, skin)
       ctx.restore()
     }
@@ -2238,12 +2247,13 @@
     const own = (world.presentationOwners ||= new Set())
     own.clear()
     if (!world.spectating) for (const seat of world.controllers) own.add(seat.id)
+    world.localFlightTick = world.online
+      ? (world.motionBuffer?.items.at(-1)?.tick ?? 0) + Math.min(0.075, age) / net.STEP
+      : world.flightTick
     world.flightBullets =
       world.flights?.sample(world.flightTick, now, {
         own,
-        localTick: world.online
-          ? (world.motionBuffer?.items.at(-1)?.tick ?? 0) + age / net.STEP
-          : world.flightTick,
+        localTick: world.localFlightTick,
       }) || []
     world.flights?.flush()
     for (let i = 0; i < (world.pendingImpacts?.length || 0);) {
@@ -2556,8 +2566,9 @@
         if (!body.alive) continue
         context.save()
         context.translate(body.x, body.y)
-        context.rotate(body.angle)
+        context.rotate(net.bodyHeading(body))
         art.hull(body, context, zoom, ratio)
+        context.rotate(body.angle - net.bodyHeading(body))
         art.turret(context, body)
         context.restore()
       }
@@ -2704,6 +2715,7 @@
     const frame = world.online && world.remoteFrame
     const presentedBullets = frame ? (frame.alpha === 1 ? frame.b : frame.a).bullets : world.bullets
     for (const bullet of presentedBullets) {
+      if (world.online && world.presentationOwners.has(bullet.owner)) continue
       if (world.online && world.flights?.controls(bullet.id, world.flightTick)) continue
       if (!visible(bullet)) continue
       if (world.online) {
@@ -2738,6 +2750,17 @@
             : bullet,
         )
     }
+    if (world.online)
+      for (const bullet of world.bullets) {
+        if (!world.presentationOwners.has(bullet.owner)) continue
+        if (world.flights?.controls(bullet.id, world.localFlightTick)) continue
+        const displayed = offlineBulletPose(world, bullet, Math.min(0.075, age))
+        if (visible(displayed))
+          bullets.push({
+            ...displayed,
+            trail: displayed.kind === "rapid" ? noTrail : displayed.trail || null,
+          })
+      }
     world.flights?.observe(bullets, world.flightTick)
     for (const item of world.flightBullets)
       if (visible(item)) bullets.push({ ...item, color: COLORS[item.colorIndex] })
@@ -2788,10 +2811,9 @@
     input ||= inputState(seat)
     const changed = input.paused !== seat.lastSent?.paused || !net.controlsEqual(input, seat.lastSent)
     if ((!immediate && now + 0.5 < seat.nextSend) || (!changed && !immediate && now < seat.keepAlive)) return
-    if (changed || !seat.lastSent) {
-      seat.seq++
-      seat.predictor.sentInput(seat.seq)
-    }
+    // The server only refreshes held controls for a new input sequence.
+    seat.seq++
+    seat.predictor.sentInput(seat.seq)
     socket.send(JSON.stringify({ ...input, seq: seat.seq, local: seat === world.local || undefined }))
     seat.lastSent = input
     seat.nextSend = now + 1000 / 30
@@ -3410,6 +3432,7 @@
   }
 
   function resetControls() {
+    clearTimeout(fireDrag?.holdTimer)
     fireDrag = null
     fire.style.setProperty("--fire-aim-x", "0px")
     fire.style.setProperty("--fire-aim-y", "0px")
@@ -3775,7 +3798,7 @@
   }
 
   function updateStick(event) {
-    if (!fireDrag?.active) {
+    if (!directAim.independent) {
       directAim.active = false
       directAim.id = null
     }
@@ -3810,9 +3833,9 @@
       knob.style.removeProperty("--stick-x")
       knob.style.removeProperty("--stick-y")
     } else if (event.pointerId === firePointer) {
-      tap = fireDrag?.center && !fireDrag.active && event.type === "pointerup"
-      if (fireDrag?.active && (event.type === "pointercancel" || stickPointer !== null))
-        directAim.active = false
+      tap = fireDrag?.center && !fireDrag.active && !fireDrag.firing && event.type === "pointerup"
+      clearTimeout(fireDrag?.holdTimer)
+      if (fireDrag?.active && event.type === "pointercancel") directAim.active = false
       fireDrag = null
       firePointer = null
       fire.style.setProperty("--fire-aim-x", "0px")
@@ -3860,7 +3883,11 @@
     event.preventDefault()
     if (event.repeat || pressed.has(event.code)) return
     pressed.add(event.code)
-    if (seat === session && ["forward", "reverse", "left", "right"].includes(action)) {
+    if (
+      seat === session &&
+      !directAim.independent &&
+      ["forward", "reverse", "left", "right"].includes(action)
+    ) {
       directAim.active = false
       directAim.id = null
     }
@@ -3885,6 +3912,7 @@
     directAim.x = position.x / distance
     directAim.y = position.y / distance
     directAim.active = true
+    directAim.independent = false
     if (mouseSeat() === session) mouseAim = null
     sendInput(session, performance.now(), nearOnly)
     return true
@@ -3972,6 +4000,15 @@
         ),
       }
     }
+    if (fireDrag?.center) {
+      const drag = fireDrag
+      drag.holdTimer = setTimeout(() => {
+        if (fireDrag !== drag || drag.active || !session || pauseMenu.open) return
+        drag.firing = true
+        fire.classList.add("held")
+        if (!padFireHeld(session)) pressFire(event)
+      }, 180)
+    }
     if (!fireDrag?.center) fire.classList.add("held")
     if (session && !padFireHeld(session) && !fireDrag?.center) pressFire(event)
   })
@@ -3982,8 +4019,9 @@
       const direction = net.fireAimDirection(event.clientX - fireDrag.x, event.clientY - fireDrag.y)
       if (!direction) return
       event.preventDefault()
+      clearTimeout(fireDrag.holdTimer)
       fireDrag.active = true
-      Object.assign(directAim, direction, { active: true, id: null })
+      Object.assign(directAim, direction, { active: true, id: null, independent: true })
       const offset = net.fireAimOffset(event.clientX - fireDrag.x, event.clientY - fireDrag.y, fireDrag.reach)
       fire.style.setProperty("--fire-aim-x", offset.x + "px")
       fire.style.setProperty("--fire-aim-y", offset.y + "px")

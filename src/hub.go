@@ -1006,12 +1006,13 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 			return nil
 		} // Spectators cannot move, fire, detonate or collect.
 		in := m.Input
-		if math.IsNaN(in.StickX) || math.IsNaN(in.StickY) || math.IsInf(in.StickX, 0) || math.IsInf(in.StickY, 0) {
+		if math.IsNaN(in.StickX) || math.IsNaN(in.StickY) || math.IsInf(in.StickX, 0) || math.IsInf(in.StickY, 0) || math.IsNaN(in.AimX) || math.IsNaN(in.AimY) || math.IsInf(in.AimX, 0) || math.IsInf(in.AimY, 0) {
 			return &wsError{1008, "Invalid controls"}
 		}
 		if in.Seq <= p.Input.Seq {
 			return nil
 		}
+		in.AimX, in.AimY = clamp(in.AimX, -1, 1), clamp(in.AimY, -1, 1)
 		in.StickX = clamp(in.StickX, -1, 1)
 		in.StickY = clamp(in.StickY, -1, 1)
 		mag := math.Hypot(in.StickX, in.StickY)

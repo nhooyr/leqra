@@ -9,6 +9,44 @@ import org.junit.Test
 
 class MuzzlePresentationTest {
     @Test
+    fun independentTurretFiresAlongBarrelWhileHullKeepsDriving() {
+        for (kind in listOf("", "rapid", "scatter", "homing", "grenade", "cannon", "laser")) {
+            val game =
+                PracticeArena(
+                    seed = 42,
+                    name = "Pilot",
+                    colorIndex = 0,
+                    botCount = 0,
+                    world = ArenaWorld(width = 840.0, height = 840.0),
+                )
+            val pilot = ArenaTank(id = 1, x = 200.0, y = 200.0)
+            if (kind.isNotEmpty()) PracticeArena.applyPower(pilot, kind)
+            game.snapshot.tanks = listOf(pilot)
+            game.step(GameInput(fire = true, stickX = 1.0, aimY = -1.0), 1.0 / 120)
+            val moved = game.snapshot.tanks.first()
+            assertTrue(moved.x > 200)
+            assertEquals(200.0, moved.y, 1e-8)
+            assertEquals(0.0, moved.movementAngle, 1e-8)
+            assertEquals(-PI / 2, moved.angle, 1e-8)
+            if (kind == "laser") {
+                val points = game.snapshot.effects.first { it.kind == "laser" }.points
+                assertEquals(moved.x, points.first().x, 1e-8)
+                assertTrue(points.first().y < moved.y)
+                assertEquals(points.first().x, points[1].x, 1e-8)
+                assertTrue(points[1].y < points.first().y)
+            } else {
+                assertTrue(kind, game.snapshot.bullets.isNotEmpty())
+                for (bullet in game.snapshot.bullets) {
+                    assertTrue(kind, bullet.vy < 0)
+                    assertTrue(kind, kotlin.math.abs(bullet.vx) < kotlin.math.abs(bullet.vy) * .25)
+                    assertTrue(kind, bullet.y < moved.y)
+                    if (kind != "scatter") assertEquals(moved.x, bullet.x, 1e-8)
+                }
+            }
+        }
+    }
+
+    @Test
     fun barrelRetractsToWallAndExtendsWhenTurningAway() {
         val maze =
             InfiniteMaze(
@@ -107,12 +145,14 @@ class MuzzlePresentationTest {
                     botCount = 0,
                     world = ArenaWorld(width = 840.0, height = 840.0, walls = listOf(wall)),
                 )
-            val pilot = ArenaTank(id = 1, x = 121.0, y = 100.0)
+            val pilot =
+                ArenaTank(id = 1, x = 121.0, y = 100.0, bodyAngle = PI / 2, independentAim = true)
             PracticeArena.applyPower(pilot, "ghost")
             if (kind.isNotEmpty()) PracticeArena.applyPower(pilot, kind)
             assertTrue(30 - MuzzlePresentation.retraction(pilot, game.maze) <= 1.1)
             game.snapshot.tanks = listOf(pilot)
-            game.step(GameInput(fire = true), 1.0 / 120)
+            game.step(GameInput(fire = true, aimX = 1.0), 1.0 / 120)
+            assertEquals(PI / 2, game.snapshot.tanks.first().movementAngle, 1e-8)
             val bullet = game.snapshot.bullets.first()
             assertTrue(bullet.vx < 0)
             assertTrue(

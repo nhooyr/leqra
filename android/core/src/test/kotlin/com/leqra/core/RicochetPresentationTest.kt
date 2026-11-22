@@ -5,6 +5,41 @@ import org.junit.Test
 
 class RicochetPresentationTest {
     @Test
+    fun liveLocalShotsReflectAtWallsAndLeaveAuthorityUntouched() {
+        val maze =
+            InfiniteMaze(
+                ArenaWorld(
+                    width = 168.0,
+                    height = 168.0,
+                    walls = listOf(MazeWall(x = 80.0, y = 0.0, w = 8.0, h = 168.0)),
+                ),
+            )
+        for (kind in listOf("", "rapid", "scatter", "homing", "grenade", "cannon")) {
+            val source =
+                ArenaBullet(
+                    id = 1,
+                    x = 70.0,
+                    y = 42.0,
+                    vx = 500.0,
+                    owner = 1,
+                    kind = kind,
+                    life = 5.0,
+                )
+            val shown = RicochetPath.live(source, .04, maze)
+            if (kind == "cannon") {
+                assertEquals(90.0, shown.x, 1e-8)
+                assertEquals(0, shown.bounces)
+            } else {
+                assertTrue(shown.x < 80)
+                assertTrue(shown.vx < 0)
+                assertEquals(1, shown.bounces)
+            }
+            assertEquals(70.0, source.x, 0.0)
+            assertEquals(500.0, source.vx, 0.0)
+        }
+    }
+
+    @Test
     fun wallAndCornerRicochetsMoveOnBothSidesOfTheActualImpact() {
         for (corner in listOf(false, true)) for (kind in listOf("", "rapid", "scatter")) {
             val world =

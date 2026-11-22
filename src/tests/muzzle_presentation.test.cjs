@@ -41,10 +41,10 @@ test("corner-grazing shots retract even when the barrel centreline clears the wa
   }
 })
 
-test("open-space muzzle and barrel follow the same current tank heading", () => {
+test("open-space muzzle and barrel follow the turret independently of the hull", () => {
   const s = boot()
   for (const angle of [0, 0.15, 0.9, Math.PI / 2, Math.PI, -Math.PI + 0.01]) {
-    const p = tank(0, 100, 100, { angle, recoil: 0 })
+    const p = tank(0, 100, 100, { angle, bodyAngle: angle + Math.PI / 2, independentAim: true, recoil: 0 })
     s.tanks = [p]
     const b = s.muzzleProjectile(p, angle)
     assert.ok(Math.abs(Math.hypot(b.x - p.x, b.y - p.y) - 28) < 1e-7)
@@ -66,7 +66,7 @@ test("Ghost overlapping the muzzle wall reflects at its incoming face without a 
   for (const power of [null, "rapid", "scatter", "homing", "grenade"])
     for (const gap of [22, 8, 1]) {
       const s = boot({ wallList: [{ x: 122, y: 50, w: 8, h: 100 }] }),
-        p = tank(0, 122 - gap, 100, { power, ghostTime: 600 })
+        p = tank(0, 122 - gap, 100, { power, ghostTime: 600, bodyAngle: Math.PI / 2, independentAim: true })
       s.tanks = [p]
       const b = s.muzzleProjectile(p, 0)
       assert.ok(b.vx < 0)

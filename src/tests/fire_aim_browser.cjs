@@ -28,7 +28,7 @@ window.__fireFixed = {
   Object.assign(tanks[1],{x:430,y:340,invulnerable:1000,spawnProtected:false,localIndex:1});
   cacheMap(); updateHUD(true); render();
  },
- read() { const t=tanks[0], r=canvas.getBoundingClientRect();return {x:t.x,y:t.y,angle:t.angle,fired:bullets.filter(b=>b.owner===t.id).length,fire:primaryFireHeld(),aim:directAim.active,screenX:r.left+offsetX+t.x*scale,screenY:r.top+offsetY+t.y*scale}; }
+ read() { const t=tanks[0], r=canvas.getBoundingClientRect();return {x:t.x,y:t.y,angle:t.angle,bodyAngle:window.leqraNet.bodyHeading(t),hp:t.hp,independentAim:t.independentAim,input:typeof inputState==="function"?inputState(session):null,fired:bullets.filter(b=>b.owner===t.id).length,fire:primaryFireHeld(),aim:directAim.active,screenX:r.left+offsetX+t.x*scale,screenY:r.top+offsetY+t.y*scale}; }
 };
 window.leqraInfinityArt=Object.freeze({`,
   ),
@@ -38,7 +38,7 @@ window.leqraInfinityArt=Object.freeze({`,
     `
 window.__fireInfinity = {
  setup(online) { stop(); start(online?'online':'offline',{public:online,roomRules:{infinity:true,infinityRandomBots:false,pickupRate:'off'}}); if(!online) for(const tank of session.tanks) Object.assign(tank,{spawnProtected:false,invulnerable:1000}); },
- read() { const t=session?.tanks.find(t=>t.id===session.id), r=canvas.getBoundingClientRect();return t?{x:t.x,y:t.y,angle:t.angle,fired:session.bullets.filter(b=>b.owner===t.id).length,fire:inputState(session).fire,aim:!!inputState(session).snapAim,joined:session.joined||!session.online,screenX:r.left+r.width/2,screenY:r.top+r.height/2}:null; }
+ read() { const t=session?.tanks.find(t=>t.id===session.id), r=canvas.getBoundingClientRect();return t?{x:t.x,y:t.y,angle:t.angle,bodyAngle:window.leqraNet.bodyHeading(t),hp:t.hp,independentAim:t.independentAim,input:typeof inputState==="function"?inputState(session):null,fired:session.bullets.filter(b=>b.owner===t.id).length,fire:inputState(session).fire,aim:!!inputState(session).snapAim||Math.hypot(inputState(session).aimX||0,inputState(session).aimY||0)>0.1,joined:session.joined||!session.online,screenX:r.left+r.width/2,screenY:r.top+r.height/2}:null; }
 };
 window.leqraInfinity =`,
   ),
@@ -106,6 +106,8 @@ async function main() {
             [mode, false],
           ],
         )) {
+          const caseName = `${name}:${landscape ? "landscape" : "portrait"}:${mode}:${silent ? "center" : "outer"}`
+          if (process.env.LEQRA_FIRE_CASE && process.env.LEQRA_FIRE_CASE !== caseName) continue
           const fixed = mode.startsWith("fixed")
           const hook = fixed ? "__fireFixed" : "__fireInfinity"
           await page.evaluate(
@@ -142,7 +144,7 @@ async function main() {
           }
           const before = await page.evaluate((hook) => window[hook].read(), hook)
           await pointer("pointerdown")
-          if (silent) await page.waitForTimeout(150)
+          if (silent) await page.waitForTimeout(50)
           await pointer("pointermove", start.x + 5, start.y)
           const tapped = await page.evaluate((hook) => window[hook].read(), hook)
           assert.equal(tapped.aim, false, mode + " dead zone")
@@ -206,6 +208,53 @@ async function main() {
             if (mode !== "online-infinity")
               await page.waitForFunction((hook) => window[hook].read().fired > 0, hook)
           }
+          if (silent) {
+            await pointer("pointerdown")
+            await page.waitForTimeout(250)
+            assert.equal(
+              (await page.evaluate((hook) => window[hook].read(), hook)).fire,
+              true,
+              "Center hold fires",
+            )
+            await pointer("pointerup")
+            assert.equal(
+              (await page.evaluate((hook) => window[hook].read(), hook)).fire,
+              false,
+              "Center release stops firing",
+            )
+          }
+          const stickSelector = fixed ? "#stickZone" : "#infiniteStick"
+          const stickBase = await page.locator(fixed ? "#stickBase" : "#infiniteStickBase").boundingBox()
+          await page.dispatchEvent(stickSelector, "pointerdown", {
+            pointerId: 93,
+            pointerType: "touch",
+            button: 0,
+            clientX: stickBase.x + stickBase.width / 2 + 24,
+            clientY: stickBase.y + stickBase.height / 2,
+          })
+          await page.waitForFunction((hook) => Math.cos(window[hook].read().bodyAngle) > 0.999, hook)
+          const driveBefore = await page.evaluate((hook) => window[hook].read(), hook)
+          await pointer("pointerdown")
+          await pointer("pointermove", start.x, start.y - 32)
+          await page.waitForTimeout(500)
+          const driving = await page.evaluate((hook) => window[hook].read(), hook)
+          if (mode !== "fixed-wall")
+            assert(
+              Math.hypot(driving.x - driveBefore.x, driving.y - driveBefore.y) > 1,
+              mode + " must move while the turret aims north",
+            )
+          assert(
+            Math.cos(driving.angle + Math.PI / 2) > 0.95,
+            caseName + " must aim north: " + JSON.stringify({ driveBefore, driving }),
+          )
+          assert(Math.cos(driving.bodyAngle) > 0.95, mode + " hull must face east while turret aims north")
+          assert(Math.abs(driving.y - driveBefore.y) < 1, mode + " driving must not follow the turret north")
+          await pointer("pointerup")
+          await page.dispatchEvent(stickSelector, "pointerup", {
+            pointerId: 93,
+            pointerType: "touch",
+            button: 0,
+          })
           if (mode !== "online-infinity") {
             const state = await page.evaluate((hook) => window[hook].read(), hook)
             await page.dispatchEvent(fixed ? "#arena" : "#infiniteCanvas", "pointerdown", {

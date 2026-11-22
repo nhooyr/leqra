@@ -34,11 +34,12 @@ func TestNativeMuzzleDeviceServer(t *testing.T) {
 			return
 		}
 		var request struct {
-			Name, Code, Weapon string
-			Infinity, Ghost    bool
-			Gap                float64
-			Serial             int
-			Read               bool
+			Name, Code, Weapon    string
+			Infinity, Ghost, Open bool
+			Gap                   float64
+			BodyAngle             float64
+			Serial                int
+			Read                  bool
 		}
 		if r.Method != "POST" || json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&request) != nil {
 			http.Error(w, "invalid fixture request", http.StatusBadRequest)
@@ -60,11 +61,26 @@ func TestNativeMuzzleDeviceServer(t *testing.T) {
 					}
 					if !request.Read {
 						walls := arena.maze.wallsNear(pilot.X-252, pilot.Y-252, pilot.X+252, pilot.Y+252)
+						if request.Open {
+							walls = nil
+							for cy := -16; cy <= 16 && len(walls) == 0; cy++ {
+								for cx := -16; cx <= 16; cx++ {
+									x, y := (float64(cx)+.5)*cellSize, (float64(cy)+.5)*cellSize
+									_, driveWall := arena.rayWalls(x, y, 60, 0, tankRadius)
+									_, gunWall := arena.rayWalls(x, y, 0, -126, 4)
+									if !driveWall && !gunWall && !arena.maze.blocked(x, y, tankRadius) {
+										walls = []Wall{{X: x + request.Gap, Y: y - 50, W: 8, H: 100}}
+										break
+									}
+								}
+							}
+						}
 						for _, wall := range walls {
 							if wall.W > 8.01 || wall.H < 50 {
 								continue
 							}
-							pilot.X, pilot.Y, pilot.Angle = wall.X-request.Gap, wall.Y+wall.H/2, 0
+							pilot.X, pilot.Y, pilot.Angle = wall.X-request.Gap, wall.Y+wall.H/2, request.BodyAngle
+							pilot.BodyAngle, pilot.IndependentAim = 0, false
 							arena.bullets, arena.pickups = nil, nil
 							arena.result = nil
 							arena.nextPickup, arena.nextBot = arena.tick+36000, arena.tick+36000
@@ -92,6 +108,7 @@ func TestNativeMuzzleDeviceServer(t *testing.T) {
 						}
 					}
 					response["x"], response["y"], response["angle"] = pilot.X, pilot.Y, pilot.Angle
+					response["bodyAngle"], response["independentAim"] = bodyHeading(pilot.Angle, pilot.BodyAngle, pilot.IndependentAim), pilot.IndependentAim
 					response["shots"], response["ghost"], response["input"] = pilot.kit.ShotSerial, pilot.kit.GhostTime, pilot.input
 					response["hp"], response["id"], response["serial"] = pilot.HP, pilot.ID, pilot.Spawn
 					response["disconnected"], response["paused"] = pilot.disconnected, pilot.paused
@@ -115,6 +132,9 @@ func TestNativeMuzzleDeviceServer(t *testing.T) {
 					}
 					if !request.Read {
 						game.World = World{Width: 840, Height: 840, Cols: 10, Rows: 10, Walls: []Wall{{X: 248, Y: 84, W: 8, H: 672}}}
+						if request.Open {
+							game.World.Walls = []Wall{}
+						}
 						game.spatial = nil
 						game.Generation++
 						game.Phase, game.Clock, game.PhaseTime = "playing", 600, 0
@@ -133,7 +153,7 @@ func TestNativeMuzzleDeviceServer(t *testing.T) {
 							}
 						}
 						id, name, color := pilot.ID, pilot.Name, pilot.Color
-						*pilot = Tank{ID: id, Name: name, Color: color, X: 248 - request.Gap, Y: 420, R: tankRadius, Alive: true, SpawnSerial: request.Serial}
+						*pilot = Tank{ID: id, Name: name, Color: color, X: 248 - request.Gap, Y: 420, Angle: request.BodyAngle, R: tankRadius, Alive: true, SpawnSerial: request.Serial}
 						if request.Ghost {
 							game.grantPower(pilot, "ghost")
 							pilot.GhostTime = 600
@@ -145,6 +165,7 @@ func TestNativeMuzzleDeviceServer(t *testing.T) {
 						response["wallX"] = 248
 					}
 					response["x"], response["y"], response["angle"] = pilot.X, pilot.Y, pilot.Angle
+					response["bodyAngle"], response["independentAim"] = bodyHeading(pilot.Angle, pilot.BodyAngle, pilot.IndependentAim), pilot.IndependentAim
 					response["shots"], response["ghost"] = pilot.ShotSerial, pilot.GhostTime
 					if member := room.Players[pilot.ID]; member != nil {
 						response["input"] = member.Input

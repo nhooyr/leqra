@@ -3,6 +3,40 @@ import XCTest
 @testable import leqraCore
 
 final class MuzzlePresentationTests: XCTestCase {
+    func testIndependentTurretFiresAlongBarrelWhileHullKeepsDriving() throws {
+        for kind in ["", "rapid", "scatter", "homing", "grenade", "cannon", "laser"] {
+            let game = PracticeArena(
+                seed: 42, name: "Pilot", colorIndex: 0, botCount: 0,
+                world: ArenaWorld(width: 840, height: 840))
+            var pilot = ArenaTank(id: 1, x: 200, y: 200)
+            if !kind.isEmpty { PracticeArena.applyPower(tank: &pilot, kind: kind) }
+            game.snapshot.tanks = [pilot]
+            game.step(input: GameInput(fire: true, stickX: 1, aimY: -1), dt: 1 / 120)
+            let moved = try XCTUnwrap(game.snapshot.tanks.first)
+            XCTAssertGreaterThan(moved.x, 200)
+            XCTAssertEqual(moved.y, 200, accuracy: 1e-8)
+            XCTAssertEqual(moved.movementAngle, 0, accuracy: 1e-8)
+            XCTAssertEqual(moved.angle, -.pi / 2, accuracy: 1e-8)
+            if kind == "laser" {
+                let beam = try XCTUnwrap(game.snapshot.effects.first { $0.kind == "laser" })
+                let start = try XCTUnwrap(beam.points.first)
+                let end = try XCTUnwrap(beam.points.dropFirst().first)
+                XCTAssertEqual(start.x, moved.x, accuracy: 1e-8)
+                XCTAssertLessThan(start.y, moved.y)
+                XCTAssertEqual(end.x, start.x, accuracy: 1e-8)
+                XCTAssertLessThan(end.y, start.y)
+            } else {
+                XCTAssertFalse(game.snapshot.bullets.isEmpty, kind)
+                for bullet in game.snapshot.bullets {
+                    XCTAssertLessThan(bullet.vy, 0, kind)
+                    XCTAssertLessThan(abs(bullet.vx), abs(bullet.vy) * 0.25, kind)
+                    XCTAssertLessThan(bullet.y, moved.y, kind)
+                    if kind != "scatter" { XCTAssertEqual(bullet.x, moved.x, accuracy: 1e-8) }
+                }
+            }
+        }
+    }
+
     func testBarrelRetractsToWallAndExtendsWhenTurningAway() {
         let wall = MazeWall(x: 122, y: 50, w: 8, h: 100)
         let maze = InfiniteMaze(world: ArenaWorld(width: 840, height: 840, walls: [wall]))
@@ -74,12 +108,13 @@ final class MuzzlePresentationTests: XCTestCase {
             let game = PracticeArena(
                 seed: 42, name: "Ghost", colorIndex: 0, botCount: 0,
                 world: ArenaWorld(width: 840, height: 840, walls: [wall]))
-            var pilot = ArenaTank(id: 1, x: 121, y: 100)
+            var pilot = ArenaTank(id: 1, x: 121, y: 100, bodyAngle: .pi / 2, independentAim: true)
             PracticeArena.applyPower(tank: &pilot, kind: "ghost")
             if !kind.isEmpty { PracticeArena.applyPower(tank: &pilot, kind: kind) }
             XCTAssertLessThanOrEqual(30 - MuzzlePresentation.retraction(tank: pilot, maze: game.maze), 1.1)
             game.snapshot.tanks = [pilot]
-            game.step(input: GameInput(fire: true), dt: 1 / 120)
+            game.step(input: GameInput(fire: true, aimX: 1), dt: 1 / 120)
+            XCTAssertEqual(game.snapshot.tanks[0].movementAngle, .pi / 2, accuracy: 1e-8)
             let bullet = try XCTUnwrap(game.snapshot.bullets.first, kind)
             let radius = kind == "rapid" ? 3.5 / 3 : kind == "homing" ? 5.0 : kind == "grenade" ? 6.0 : 3.5
             XCTAssertLessThan(bullet.vx, 0)

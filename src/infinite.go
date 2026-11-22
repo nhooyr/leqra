@@ -25,40 +25,42 @@ const (
 )
 
 type infiniteTank struct {
-	AmmoEpoch    uint64  `json:"ammoEpoch,omitempty"`
-	GrenadeEpoch *uint64 `json:"grenadeEpoch,omitempty"`
-	ID           int     `json:"id"`
-	X            float64 `json:"x"`
-	Y            float64 `json:"y"`
-	VX           float64 `json:"vx"`
-	VY           float64 `json:"vy"`
-	Angle        float64 `json:"angle"`
-	HP           int     `json:"hp"`
-	Bot          bool    `json:"bot"`
-	Difficulty   string  `json:"difficulty,omitempty"`
-	ColorIndex   int     `json:"colorIndex"`
-	Team         int     `json:"team,omitempty"`
-	Score        int     `json:"score"`
-	Rank         int     `json:"rank,omitempty"`
-	Name         string  `json:"name"`
-	Protected    bool    `json:"protected,omitempty"`
-	Ack          uint64  `json:"ack,omitempty"`
-	AckSteps     uint32  `json:"ackSteps,omitempty"`
-	Spawn        int     `json:"spawnSerial,omitempty"`
-	Track        float64 `json:"track,omitempty"`
-	Recoil       float64 `json:"recoil,omitempty"`
-	Cooldown     float64 `json:"cooldown,omitempty"`
-	Invuln       float64 `json:"invulnerable,omitempty"`
-	Power        string  `json:"power,omitempty"`
-	PowerTime    float64 `json:"powerTime,omitempty"`
-	Charges      int     `json:"charges,omitempty"`
-	Machine      int     `json:"machineRounds,omitempty"`
-	Shield       float64 `json:"shield,omitempty"`
-	Shields      int     `json:"shieldCharges,omitempty"`
-	SpeedTime    float64 `json:"speedTime,omitempty"`
-	Speed        int     `json:"speedStacks,omitempty"`
-	Ghost        float64 `json:"ghostTime,omitempty"`
-	Starman      float64 `json:"starmanTime,omitempty"`
+	AmmoEpoch      uint64  `json:"ammoEpoch,omitempty"`
+	GrenadeEpoch   *uint64 `json:"grenadeEpoch,omitempty"`
+	ID             int     `json:"id"`
+	X              float64 `json:"x"`
+	Y              float64 `json:"y"`
+	VX             float64 `json:"vx"`
+	VY             float64 `json:"vy"`
+	Angle          float64 `json:"angle"`
+	BodyAngle      float64 `json:"bodyAngle,omitempty"`
+	IndependentAim bool    `json:"independentAim,omitempty"`
+	HP             int     `json:"hp"`
+	Bot            bool    `json:"bot"`
+	Difficulty     string  `json:"difficulty,omitempty"`
+	ColorIndex     int     `json:"colorIndex"`
+	Team           int     `json:"team,omitempty"`
+	Score          int     `json:"score"`
+	Rank           int     `json:"rank,omitempty"`
+	Name           string  `json:"name"`
+	Protected      bool    `json:"protected,omitempty"`
+	Ack            uint64  `json:"ack,omitempty"`
+	AckSteps       uint32  `json:"ackSteps,omitempty"`
+	Spawn          int     `json:"spawnSerial,omitempty"`
+	Track          float64 `json:"track,omitempty"`
+	Recoil         float64 `json:"recoil,omitempty"`
+	Cooldown       float64 `json:"cooldown,omitempty"`
+	Invuln         float64 `json:"invulnerable,omitempty"`
+	Power          string  `json:"power,omitempty"`
+	PowerTime      float64 `json:"powerTime,omitempty"`
+	Charges        int     `json:"charges,omitempty"`
+	Machine        int     `json:"machineRounds,omitempty"`
+	Shield         float64 `json:"shield,omitempty"`
+	Shields        int     `json:"shieldCharges,omitempty"`
+	SpeedTime      float64 `json:"speedTime,omitempty"`
+	Speed          int     `json:"speedStacks,omitempty"`
+	Ghost          float64 `json:"ghostTime,omitempty"`
+	Starman        float64 `json:"starmanTime,omitempty"`
 
 	CooldownTotal float64 `json:"cooldownTotal,omitempty"`
 	RespawnTime   float64 `json:"respawnTime,omitempty"`
@@ -79,6 +81,7 @@ type infinitePilot struct {
 	input                  Input
 	inputAt, activeAt      time.Time
 	lastStickX, lastStickY float64
+	lastAimX, lastAimY     float64
 	fireDown, firePending  bool // Keep the physical button state across respawns.
 	paused                 bool // Holds respawn independently of control expiry.
 	disconnected           bool
@@ -526,6 +529,7 @@ func (a *infiniteArena) setInput(p *infinitePilot, input Input, paused bool, now
 		input = Input{Seq: input.Seq}
 		p.firePending = false
 	}
+	input.AimX, input.AimY = clamp(input.AimX, -1, 1), clamp(input.AimY, -1, 1)
 	input.StickX = clamp(input.StickX, -1, 1)
 	input.StickY = clamp(input.StickY, -1, 1)
 	if now.Sub(p.inputAt) > inputTimeout {
@@ -539,9 +543,11 @@ func (a *infiniteArena) setInput(p *infinitePilot, input Input, paused bool, now
 	p.fireDown = input.Fire
 	// An idle desktop pointer keeps sending its last aim direction.
 	aimChanged := input.StickX != p.lastStickX || input.StickY != p.lastStickY
-	if infiniteButtonsDown(input) || (math.Hypot(input.StickX, input.StickY) > .1 && (!input.AimOnly || aimChanged)) {
+	turretChanged := input.AimX != p.lastAimX || input.AimY != p.lastAimY
+	if infiniteButtonsDown(input) || turretChanged || (math.Hypot(input.StickX, input.StickY) > .1 && (!input.AimOnly || aimChanged)) {
 		p.activeAt = now
 	}
+	p.lastAimX, p.lastAimY = input.AimX, input.AimY
 	p.lastStickX, p.lastStickY = input.StickX, input.StickY
 	p.input, p.inputAt = input, now
 }
@@ -597,6 +603,7 @@ func (a *infiniteArena) spawn(p *infinitePilot, nearX, nearY float64, minCells, 
 		}
 	}
 	p.X, p.Y, p.Angle = bestX, bestY, a.random.Float64()*2*math.Pi-math.Pi
+	p.BodyAngle, p.IndependentAim = 0, false
 	p.VX, p.VY = 0, 0
 	p.HP, p.Protected, p.hasWaypoint = infiniteMaxHP, true, false
 	p.KilledBy = ""
@@ -709,8 +716,8 @@ func (a *infiniteArena) step(now time.Time) {
 
 func (a *infiniteArena) drive(p *infinitePilot, input Input) {
 	boost := float64(movementSpeedCount(&p.kit))
-	angle, throttle := steerTank(p.Angle, input, 1+boostTurnPerStack*boost, tickDT)
-	p.Angle = angle
+	angle, throttle := steerTank(bodyHeading(p.Angle, p.BodyAngle, p.IndependentAim), input, 1+boostTurnPerStack*boost, tickDT)
+	p.Angle, p.BodyAngle, p.IndependentAim = aimedHeading(angle, input)
 	speed := infiniteTankSpeed * (1 + boostSpeedPerStack*boost)
 	dx, dy := math.Cos(angle)*speed*throttle*tickDT, math.Sin(angle)*speed*throttle*tickDT
 	x, y := p.X, p.Y

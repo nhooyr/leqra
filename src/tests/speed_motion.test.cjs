@@ -246,6 +246,7 @@ test("fixed rendering projects fractional tank and projectile poses and restores
     phase: "playing",
     localTick: 0,
     accumulator: 1 / 240,
+    fireDrag: { active: false },
     directAim: { active: false },
     stick: { x: 0, y: 0, mag: 0, assisted: false },
     BOOST_SPEED_PER_STACK: 0.65,

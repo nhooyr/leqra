@@ -1,9 +1,12 @@
 # Local leaderboard administration
 
-The server starts a separate admin page at <http://127.0.0.1:8081>, including
-when started with `./dev.sh`. It is never served on the public game port.
-`LEQRA_ADMIN_ADDR` can select another loopback address and port, or `off` to
-disable the page. Wildcard and public bind addresses are rejected.
+The server starts a separate admin page at <http://localhost:8081>, including
+when started with `./dev.sh`. The default `LEQRA_ADMIN_ADDR=localhost:8081`
+binds both `127.0.0.1` and `::1` on the same port, and startup logs list both
+actual addresses. Both binds must succeed; an occupied port fails startup.
+It is never served on the public game port. Set `LEQRA_ADMIN_ADDR` to another
+`localhost:PORT` for both families, an explicit loopback IP and port for one
+family, or `off` to disable the page. Wildcard and public bind addresses are rejected.
 
 For a remote server, forward its loopback port through SSH:
 
@@ -19,6 +22,18 @@ The page previews callsigns, scores, and connection status. Its regex field
 uses Go regular expressions, with case-sensitive matching by default. For
 example, `(?i)^test` matches names beginning with “test” regardless of case.
 Previewing and refreshing do not change any scores.
+
+The table includes current registered accounts even if they have no public
+leaderboard entry; those rows show no score. Choose **Recover key** in the
+Account key column, confirm the replacement, then use **Copy key** and import
+it through the client's Account settings. Recovery preserves the account's
+callsigns and scores, revokes its old key, and signs out clients using that key.
+Released or expired accounts are no longer available for recovery.
+
+The server stores hashes of account keys, so recovery creates a replacement
+rather than displaying the original. The replacement is generated in the admin
+browser and remains visible until the recovery panel is closed. If clipboard
+access is unavailable, select and copy the key from its field.
 
 “Clear matches” clears only matching standings. “Reset all” clears the public
 Infinity leaderboard. Both ask for confirmation. Affected connected players
