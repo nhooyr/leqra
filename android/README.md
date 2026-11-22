@@ -107,6 +107,9 @@ Accounts expire after one month without signing in.
 
 Touch controls steer on the left and fire on the right. Touch near your tank to
 point it exactly toward your finger without moving; drag there to adjust aim.
+Touching any part of Fire shoots immediately. Hold or drag it to keep firing;
+dragging aims the turret independently while the joystick drives the tank, and
+the crosshair follows your aim. Release or cancel the touch to stop firing.
 Enable P2 manually to keep touch on P1 and route keyboard and mouse controls to P2.
 Both W/A/S/D and arrow keys work; move the mouse to aim and hold its left button
 to fire. With one local tank, those controls belong to P1. Gamepads retain their

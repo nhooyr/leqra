@@ -663,7 +663,7 @@ test("Quick Tour requires the demonstrated action on each page and resets on rep
       assert.equal(drawn.y, before.y)
       assert.equal(drawn.angle, -Math.PI / 2)
       assert.equal(h.window.leqraNet.bodyHeading(drawn), 0)
-      assert.equal(h.bulletDraws.at(-1).length, 0, "center dragging stays silent in the tour")
+      assert(h.bulletDraws.at(-1).length > 0, "center dragging fires in the tour")
       h.window.emit("pointerup", pointer)
       h.window.emit("pointerup", fire)
       $("introTourFireButton").emit("pointerdown", pointer)
@@ -2023,7 +2023,7 @@ test("Infinity control groups preserve aliases through remapping and touch layou
   assert.equal((hint.innerHTML.match(/class="control-player"/g) || []).length, 2)
   assert.match(
     hint.textContent,
-    /Saved pilot \(P1\) Drag the stick to move and aim. Touch near the tank to aim in place. Drag the center of Fire to aim without shooting./,
+    /Saved pilot \(P1\) Drag the stick to move and aim. Touch near the tank to aim in place. Tap Fire to shoot, or hold it to fire continuously./,
   )
   assert.match(hint.textContent, /Wingmate \(P2\) Forward ↑ Reverse ↓ Left ← Right → Fire SPACE \/ ENTER/)
   bindings[1].fireAlt = "KeyV"
@@ -6135,7 +6135,7 @@ test("Infinity Fire drag sends in-place aim without extra fire edges and resets 
   h.infinity.close()
 })
 
-test("Infinity center Fire drag stays silent while a center tap sends one press on release", () => {
+test("Infinity center Fire shoots immediately and keeps firing while dragging or driving", () => {
   const h = harness(undefined, true)
   h.infinity.start("online")
   const socket = h.sockets[0]
@@ -6158,16 +6158,17 @@ test("Infinity center Fire drag stays silent while a center tap sends one press 
   }
   const from = socket.sent.length
   button.emit("pointerdown", start)
+  assert.equal(socket.sent.at(-1).fire, true, "Fire starts immediately at the center")
   h.window.emit("pointermove", { ...start, clientY: start.clientY - 40 })
   assert.equal(socket.sent.at(-1).aimY, -1)
+  assert.equal(socket.sent.at(-1).fire, true, "aiming keeps continuous Fire held")
   h.window.emit("pointerup", start)
-  assert.equal(
-    socket.sent.slice(from).some((packet) => packet.type === "input" && packet.fire),
-    false,
-  )
+  assert.equal(socket.sent.at(-1).fire, false)
   button.emit("pointerdown", start)
+  assert.equal(socket.sent.at(-1).fire, true)
   h.window.emit("pointerup", start)
-  assert.equal(socket.sent.slice(from).filter((packet) => packet.type === "input" && packet.fire).length, 1)
+  assert.equal(socket.sent.at(-1).fire, false)
+  assert(socket.sent.slice(from).some((packet) => packet.type === "input" && packet.fire))
   button.emit("pointerdown", start)
   h.elapse(180)
   assert.equal(socket.sent.at(-1).fire, true, "holding the center sends held Fire")
@@ -6189,6 +6190,7 @@ test("Infinity center Fire drag stays silent while a center tap sends one press 
   assert(driving.stickX > 0.1, "eastward joystick movement reaches the server")
   assert.equal(driving.stickY, 0)
   assert.equal(driving.aimY, -1, "the turret still aims north")
+  assert.equal(driving.fire, true, "driving and aiming keep firing")
   h.window.emit("pointerup", start)
   h.window.emit("pointerup", { pointerId: 36 })
   h.infinity.close()

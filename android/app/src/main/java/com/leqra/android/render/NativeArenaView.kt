@@ -58,10 +58,6 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     private var fireAim: Pair<Double, Double>? = null
     private var fireTouchX = 0f
     private var fireTouchY = 0f
-    private var fireTouchCenter = false
-    private var fireTouchFiring = false
-    private var fireTouchDragged = false
-    private var fireHoldTask: Runnable? = null
     private var fireCrosshairX = 0f
     private var fireCrosshairY = 0f
     val input: GameInput
@@ -435,14 +431,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         guideReady = false
     }
 
-    private fun cancelFireHold() {
-        fireHoldTask?.let(::removeCallbacks)
-        fireHoldTask = null
-    }
-
     fun resetControls() {
-        cancelFireHold()
-        fireTouchFiring = false
         clearMouseControls()
         aimPointer = -1
         stickPointer = -1
@@ -1840,27 +1829,8 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                     firePointer = pointer
                     fireTouchX = x
                     fireTouchY = y
-                    fireTouchDragged = false
-                    fireTouchCenter = hypot(x - fireX, y - fireY) <= 22f
-                    cancelFireHold()
-                    fireTouchFiring = !fireTouchCenter
-                    touchControls.fire = fireTouchFiring
-                    fireHeld = fireTouchFiring
-                    if (fireTouchCenter) {
-                        val heldPointer = pointer
-                        fireHoldTask =
-                            Runnable {
-                                fireHoldTask = null
-                                if (firePointer == heldPointer && !fireTouchDragged) {
-                                    fireTouchFiring = true
-                                    touchControls.fire = true
-                                    fireHeld = true
-                                    onInput?.invoke(input.copy())
-                                    invalidate()
-                                }
-                            }
-                                .also { postDelayed(it, 180) }
-                    }
+                    touchControls.fire = true
+                    fireHeld = true
                 }
             }
             MotionEvent.ACTION_MOVE -> {
@@ -1873,8 +1843,6 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                     val dy = event.getY(fire) / density - fireTouchY
                     val distance = hypot(dx, dy)
                     if (distance.isFinite() && distance >= 8f) {
-                        cancelFireHold()
-                        fireTouchDragged = true
                         fireAim = (dx / distance).toDouble() to (dy / distance).toDouble()
                         val scale = min(1f, 24f / distance)
                         fireCrosshairX = dx * scale
@@ -1895,16 +1863,9 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                     }
                 }
                 if (pointer == firePointer) {
-                    cancelFireHold()
-                    val tap = fireTouchCenter && !fireTouchDragged && !fireTouchFiring
-                    fireTouchFiring = false
                     firePointer = -1
                     fireCrosshairX = 0f
                     fireCrosshairY = 0f
-                    if (tap) {
-                        touchControls.fire = true
-                        onInput?.invoke(input.copy())
-                    }
                     touchControls.fire = false
                     fireHeld = false
                 }

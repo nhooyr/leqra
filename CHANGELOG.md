@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.9.0
+
+- Fire immediately and continuously while holding or dragging the mobile Fire button, including while aiming the turret independently and driving with the joystick, on web, iOS, and Android.
+
 ## v5.8.3
 
 - Show the connected server's version beside the app version at the bottom of Settings on web, iOS, and Android.

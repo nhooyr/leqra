@@ -205,8 +205,8 @@ async function main() {
               Math.abs(driving.angle + Math.PI / 2) < 0.01 && Math.abs(driving.bodyAngle) < 0.01,
               label + " separate headings",
             )
-            assert.equal(driving.shots, 0)
-            assert.equal(driving.input.fire, false)
+            assert(driving.shots > 0, label + " fires while driving and aiming")
+            assert.equal(driving.input.fire, true)
             await pointer(stickSelector, "pointerup", 20, 0, 0)
             await fire("pointerup")
             await arranged()

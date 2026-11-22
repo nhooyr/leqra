@@ -82,6 +82,7 @@ jobs:
       - uses: actions/cache@v6
         with:
           path: |
+            ${{ runner.temp }}/leqra-ios-inputs.json
             ${{ runner.temp }}/leqra-swift
             ${{ runner.temp }}/leqra-ios/Build
             ${{ runner.temp }}/leqra-ios/ModuleCache.noindex
@@ -89,7 +90,7 @@ jobs:
             ${{ runner.temp }}/leqra-ios/SDKExplicitPrecompiledModules
             ${{ runner.temp }}/leqra-ios/CompilationCache.noindex
             ${{ runner.temp }}/leqra-ios/SourcePackages
-          key: ios-${{ runner.os }}-${{ runner.arch }}-${{ steps.ios-cache.outputs.toolchain }}-${{ hashFiles('ios/**', 'ci/ios.sh', 'scripts/ios-version.sh', 'scripts/version.sh', 'src/main.go') }}
+          key: ios-${{ runner.os }}-${{ runner.arch }}-${{ steps.ios-cache.outputs.toolchain }}-${{ hashFiles('ios/**', 'ci/ios.sh', 'ci/ios-cache.py', 'scripts/ios-version.sh', 'scripts/version.sh', 'src/main.go') }}
           restore-keys: |
             ios-${{ runner.os }}-${{ runner.arch }}-${{ steps.ios-cache.outputs.toolchain }}-
       - run: ./ci/ios.sh
@@ -115,7 +116,6 @@ jobs:
         with:
           cache-provider: basic
           add-job-summary: never
-      - uses: android-actions/setup-android@v4
       - uses: actions/cache@v6
         with:
           path: |

@@ -18,7 +18,9 @@ const scripts = {
     "window.leqraInfinityArt=Object.freeze({",
     `
 window.__fireFixed = {
+ seen: new Set(),
  setup(near) {
+  this.seen.clear();
   window.leqraInfinity.close(); mode='room';
   localRoom.rules=validateRoomRules({...defaultRoomRules(),infinity:false,pickupRate:'off'});
   localRoom.players=[0,1].map(id=>({id,member:id+1,kind:'human',name:id?'Observer':'Pilot',team:0,colorIndex:id}));
@@ -28,7 +30,7 @@ window.__fireFixed = {
   Object.assign(tanks[1],{x:430,y:340,invulnerable:1000,spawnProtected:false,localIndex:1});
   cacheMap(); updateHUD(true); render();
  },
- read() { const t=tanks[0], r=canvas.getBoundingClientRect();return {x:t.x,y:t.y,angle:t.angle,bodyAngle:window.leqraNet.bodyHeading(t),hp:t.hp,independentAim:t.independentAim,input:typeof inputState==="function"?inputState(session):null,fired:bullets.filter(b=>b.owner===t.id).length,fire:primaryFireHeld(),aim:directAim.active,screenX:r.left+offsetX+t.x*scale,screenY:r.top+offsetY+t.y*scale}; }
+ read() { const t=tanks[0], r=canvas.getBoundingClientRect();for(const b of bullets)if(b.owner===t.id)this.seen.add(b.id);return {x:t.x,y:t.y,angle:t.angle,bodyAngle:window.leqraNet.bodyHeading(t),hp:t.hp,independentAim:t.independentAim,input:typeof inputState==="function"?inputState(session):null,fired:this.seen.size,fire:primaryFireHeld(),aim:directAim.active,screenX:r.left+offsetX+t.x*scale,screenY:r.top+offsetY+t.y*scale}; }
 };
 window.leqraInfinityArt=Object.freeze({`,
   ),
@@ -37,8 +39,9 @@ window.leqraInfinityArt=Object.freeze({`,
     "window.leqraInfinity =",
     `
 window.__fireInfinity = {
- setup(online) { stop(); start(online?'online':'offline',{public:online,roomRules:{infinity:true,infinityRandomBots:false,pickupRate:'off'}}); if(!online) for(const tank of session.tanks) Object.assign(tank,{spawnProtected:false,invulnerable:1000}); },
- read() { const t=session?.tanks.find(t=>t.id===session.id), r=canvas.getBoundingClientRect();return t?{x:t.x,y:t.y,angle:t.angle,bodyAngle:window.leqraNet.bodyHeading(t),hp:t.hp,independentAim:t.independentAim,input:typeof inputState==="function"?inputState(session):null,fired:session.bullets.filter(b=>b.owner===t.id).length,fire:inputState(session).fire,aim:!!inputState(session).snapAim||Math.hypot(inputState(session).aimX||0,inputState(session).aimY||0)>0.1,joined:session.joined||!session.online,screenX:r.left+r.width/2,screenY:r.top+r.height/2}:null; }
+ seen: new Set(),
+ setup(online) { this.seen.clear(); stop(); start(online?'online':'offline',{public:online,roomRules:{infinity:true,infinityRandomBots:false,pickupRate:'off'}}); if(!online) for(const tank of session.tanks) Object.assign(tank,{spawnProtected:false,invulnerable:1000}); },
+ read() { const t=session?.tanks.find(t=>t.id===session.id), r=canvas.getBoundingClientRect();if(t)for(const b of session.bullets)if(b.owner===t.id)this.seen.add(b.id);return t?{x:t.x,y:t.y,angle:t.angle,bodyAngle:window.leqraNet.bodyHeading(t),hp:t.hp,independentAim:t.independentAim,input:typeof inputState==="function"?inputState(session):null,fired:this.seen.size,fire:inputState(session).fire,aim:!!inputState(session).snapAim||Math.hypot(inputState(session).aimX||0,inputState(session).aimY||0)>0.1,joined:session.joined||!session.online,screenX:r.left+r.width/2,screenY:r.top+r.height/2}:null; }
 };
 window.leqraInfinity =`,
   ),
@@ -100,14 +103,15 @@ async function main() {
         page.on("pageerror", (error) => errors.push(error.message))
         await page.goto(url + "/?test=1")
         await page.waitForFunction(() => window.__fireFixed && window.__fireInfinity)
-        for (const [mode, silent] of ["fixed", "fixed-wall", "infinity", "online-infinity"].flatMap(
+        for (const [mode, center] of ["fixed", "fixed-wall", "infinity", "online-infinity"].flatMap(
           (mode) => [
             [mode, true],
             [mode, false],
           ],
         )) {
-          const caseName = `${name}:${landscape ? "landscape" : "portrait"}:${mode}:${silent ? "center" : "outer"}`
+          const caseName = `${name}:${landscape ? "landscape" : "portrait"}:${mode}:${center ? "center" : "outer"}`
           if (process.env.LEQRA_FIRE_CASE && process.env.LEQRA_FIRE_CASE !== caseName) continue
+          console.log("Checking " + caseName)
           const fixed = mode.startsWith("fixed")
           const hook = fixed ? "__fireFixed" : "__fireInfinity"
           await page.evaluate(
@@ -121,7 +125,7 @@ async function main() {
           const selector = fixed ? "#fireBtn" : "#infiniteFire"
           await page.locator(selector).waitFor({ state: "visible" })
           const box = await page.locator(selector).boundingBox()
-          const start = { x: box.x + box.width / 2 + (silent ? 0 : 32), y: box.y + box.height / 2 }
+          const start = { x: box.x + box.width / 2 + (center ? 0 : 32), y: box.y + box.height / 2 }
           async function pointer(type, x = start.x, y = start.y) {
             await page.evaluate(
               ({ selector, type, x, y }) => {
@@ -144,11 +148,12 @@ async function main() {
           }
           const before = await page.evaluate((hook) => window[hook].read(), hook)
           await pointer("pointerdown")
-          if (silent) await page.waitForTimeout(50)
+          await page.waitForFunction((hook) => window[hook].read().fired > 0, hook)
+          if (center) await page.waitForTimeout(50)
           await pointer("pointermove", start.x + 5, start.y)
           const tapped = await page.evaluate((hook) => window[hook].read(), hook)
           assert.equal(tapped.aim, false, mode + " dead zone")
-          if (silent) assert.equal(tapped.fired, 0, "Center touch-down must not fire")
+          assert.equal(tapped.fire, true, "Touch-down starts continuous fire")
           for (const angle of [-Math.PI / 2, Math.PI, Math.PI / 4]) {
             await pointer("pointermove", start.x + Math.cos(angle) * 32, start.y + Math.sin(angle) * 32)
             await page.waitForFunction(
@@ -160,8 +165,8 @@ async function main() {
             )
             const aimed = await page.evaluate((hook) => window[hook].read(), hook)
             assert(Math.hypot(aimed.x - before.x, aimed.y - before.y) < 0.01, mode + " moved while aiming")
-            assert.equal(aimed.fire, !silent)
-            if (silent) assert.equal(aimed.fired, 0, "Center dragging must not fire")
+            assert.equal(aimed.fire, true)
+
             const crosshair = await page.locator(selector).evaluate((button) => {
               const base = button.getBoundingClientRect(),
                 glyph = button.querySelector("svg").getBoundingClientRect()
@@ -183,7 +188,7 @@ async function main() {
           await page.screenshot({
             path: path.join(
               output,
-              `${name}-${landscape ? "landscape" : "portrait"}-${mode}-${silent ? "center" : "outer"}-drag.png`,
+              `${name}-${landscape ? "landscape" : "portrait"}-${mode}-${center ? "center" : "outer"}-drag.png`,
             ),
           })
           await pointer("pointerup")
@@ -197,18 +202,14 @@ async function main() {
             )
           })
           assert(centered < 0.2, "Crosshair must recenter after release")
-          if (silent) {
-            assert.equal(
-              (await page.evaluate((hook) => window[hook].read(), hook)).fired,
-              0,
-              "Releasing a center drag must not fire",
-            )
+          if (center) {
+            await page.waitForFunction((hook) => window[hook].read().fired > 0, hook)
             await pointer("pointerdown")
             await pointer("pointerup")
             if (mode !== "online-infinity")
               await page.waitForFunction((hook) => window[hook].read().fired > 0, hook)
           }
-          if (silent) {
+          if (center) {
             await pointer("pointerdown")
             await page.waitForTimeout(250)
             assert.equal(
@@ -274,10 +275,10 @@ async function main() {
           await page.screenshot({
             path: path.join(
               output,
-              `${name}-${landscape ? "landscape" : "portrait"}-${mode}-${silent ? "center" : "outer"}.png`,
+              `${name}-${landscape ? "landscape" : "portrait"}-${mode}-${center ? "center" : "outer"}.png`,
             ),
           })
-          results.push({ name, landscape, mode, stationary: true, firing: !silent })
+          results.push({ name, landscape, mode, stationary: true, firing: true })
         }
         assert.deepEqual(errors, [])
         await context.close()

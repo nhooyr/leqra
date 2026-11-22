@@ -191,6 +191,7 @@ final class GameSession: ObservableObject {
     private var fireArrival = 0.0
     private let emptyFireProbe = ProcessInfo.processInfo.arguments.contains("--probe-empty-fire-feedback")
     private let directAimProbe = ProcessInfo.processInfo.arguments.contains("--probe-direct-aim")
+    private var directAimProbeLastShotID = 0
     private let deathNoticeProbe = ProcessInfo.processInfo.arguments.contains("--probe-death-notice")
     private var hudElapsed = 0.0
     private var frameElapsed = 0.0
@@ -3135,9 +3136,10 @@ final class GameSession: ObservableObject {
         {
             let alive = snapshot.tanks.filter { $0.id != localID && $0.hp > 0 }.count
             let standard = snapshot.bullets.filter { $0.owner == tank.id && $0.kind.isEmpty }.count
-            let shot = snapshot.bullets.first { $0.owner == tank.id }
+            let shot = snapshot.bullets.filter { $0.owner == tank.id }.max { $0.id < $1.id }
+            directAimProbeLastShotID = max(directAimProbeLastShotID, shot?.id ?? 0)
             scene.view?.superview?.accessibilityValue =
-                "x=\(tank.x),y=\(tank.y),angle=\(tank.angle),bodyAngle=\(tank.movementAngle),screenX=\(point.x),screenY=\(point.y),grenades=\(tank.grenades),charges=\(tank.charges),bullets=\(snapshot.bullets.count),standardBullets=\(standard),shotX=\(shot?.x ?? 0),shotY=\(shot?.y ?? 0),shotVX=\(shot?.vx ?? 0),shotVY=\(shot?.vy ?? 0),ammoEpoch=\(tank.ammoEpoch),targets=\(alive),score=\(tank.score),\(scene.controlLabelProbe)"
+                "x=\(tank.x),y=\(tank.y),angle=\(tank.angle),bodyAngle=\(tank.movementAngle),screenX=\(point.x),screenY=\(point.y),grenades=\(tank.grenades),charges=\(tank.charges),bullets=\(snapshot.bullets.count),standardBullets=\(standard),shotID=\(directAimProbeLastShotID),shotX=\(shot?.x ?? 0),shotY=\(shot?.y ?? 0),shotVX=\(shot?.vx ?? 0),shotVY=\(shot?.vy ?? 0),ammoEpoch=\(tank.ammoEpoch),targets=\(alive),score=\(tank.score),\(scene.controlLabelProbe)"
         }
         if ProcessInfo.processInfo.arguments.contains("--probe-local-p2-input") {
             let primary = snapshot.tanks.first { $0.id == localID }

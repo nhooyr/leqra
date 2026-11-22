@@ -131,10 +131,6 @@ final class GameScene: SKScene {
     private var stickTouch: UITouch?
     private var fireTouch: UITouch?
     private var fireTouchOrigin = CGPoint.zero
-    private var fireTouchCenter = false
-    private var fireTouchFiring = false
-    private var fireTouchDragged = false
-    private var fireHoldTask: DispatchWorkItem?
     private var stickOrigin = CGPoint.zero
     private var fireOrigin = CGPoint.zero
     private var previousTime: TimeInterval = 0
@@ -493,14 +489,7 @@ final class GameScene: SKScene {
         world.setScale(zoom)
     }
 
-    private func cancelFireHold() {
-        fireHoldTask?.cancel()
-        fireHoldTask = nil
-    }
-
     func resetControls() {
-        cancelFireHold()
-        fireTouchFiring = false
         onControlsReset?()
         aimTouch = nil
         stickTouch = nil
@@ -1318,23 +1307,7 @@ final class GameScene: SKScene {
             {
                 fireTouch = touch
                 fireTouchOrigin = location
-                fireTouchDragged = false
-                fireTouchCenter = hypot(location.x - fireOrigin.x, location.y - fireOrigin.y) <= 22
-                cancelFireHold()
-                fireTouchFiring = !fireTouchCenter
-                setFireSource(.touch, down: fireTouchFiring)
-                if fireTouchCenter {
-                    let task = DispatchWorkItem { [weak self, weak touch] in
-                        guard let self, let touch, self.fireTouch === touch,
-                            !self.fireTouchDragged
-                        else { return }
-                        self.fireHoldTask = nil
-                        self.fireTouchFiring = true
-                        self.setFireSource(.touch, down: true)
-                    }
-                    fireHoldTask = task
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: task)
-                }
+                setFireSource(.touch, down: true)
                 impact.prepare()
             }
         }
@@ -1352,8 +1325,6 @@ final class GameScene: SKScene {
                 let dy = Double(fireTouchOrigin.y - point.y)
                 let distance = hypot(dx, dy)
                 if distance.isFinite && distance >= 8 {
-                    cancelFireHold()
-                    fireTouchDragged = true
                     inputSources.fireAim = BeamPoint(x: dx / distance, y: dy / distance)
                     let scale = min(1, 24 / distance)
                     fireCrosshair.position = CGPoint(x: dx * scale, y: -dy * scale)
@@ -1381,13 +1352,9 @@ final class GameScene: SKScene {
                 stickKnob.position = stickOrigin
             }
             if touch === fireTouch {
-                cancelFireHold()
-                let tap = fireTouchCenter && !fireTouchDragged && !fireTouchFiring && !cancelled
-                fireTouchFiring = false
                 if cancelled { inputSources.fireAim = nil }
                 fireTouch = nil
                 fireCrosshair.position = .zero
-                if tap { setFireSource(.touch, down: true) }
                 setFireSource(.touch, down: false)
             }
         }

@@ -691,7 +691,7 @@ final class GameUITests: XCTestCase {
             if page == 1 {
                 XCTAssertEqual(
                     instructions.label,
-                    "Drag the center of Fire to aim without shooting. Tap to shoot, or hold still to fire continuously. Drive with the joystick while aiming the turret independently with Fire."
+                    "Tap Fire to shoot, or hold it to fire continuously. Drag Fire to aim while firing, even while driving with the joystick."
                 )
             }
             if page == 2 {
@@ -1297,7 +1297,7 @@ final class GameUITests: XCTestCase {
                 fire.press(
                     forDuration: 0.05,
                     thenDragTo: fire.withOffset(CGVector(dx: cos(direction) * 32, dy: sin(direction) * 32)),
-                    withVelocity: .slow, thenHoldForDuration: 1.2)
+                    withVelocity: .slow, thenHoldForDuration: 0.2)
                 let aimed = XCTNSPredicateExpectation(
                     predicate: NSPredicate { _, _ in
                         guard let angle = telemetry()["angle"] else { return false }
@@ -1311,8 +1311,8 @@ final class GameUITests: XCTestCase {
                 XCTAssertEqual(after["crosshairY"], 0)
                 XCTAssertEqual(try XCTUnwrap(after["x"]), try XCTUnwrap(before["x"]), accuracy: 0.0001)
                 XCTAssertEqual(try XCTUnwrap(after["y"]), try XCTUnwrap(before["y"]), accuracy: 0.0001)
-                XCTAssertEqual(
-                    after["bullets"], 0, "Center drags must never fire, including on touch-down or release")
+                XCTAssertGreaterThan(after["bullets"] ?? 0, 0, "Center drags fire while aiming")
+                XCTAssertGreaterThan(after["shotID"] ?? 0, before["shotID"] ?? 0)
             }
             let point = telemetry()
             let fire = app.coordinate(withNormalizedOffset: .zero).withOffset(
@@ -1346,10 +1346,10 @@ final class GameUITests: XCTestCase {
                 XCTAssertEqual(try XCTUnwrap(driven["angle"]), angle, accuracy: 0.01)
                 XCTAssertEqual(try XCTUnwrap(driven["bodyAngle"]), 0, accuracy: 0.01)
             }
-            let beforeHold = telemetry()["bullets"] ?? 0
+            let beforeHold = telemetry()["shotID"] ?? 0
             fire.press(forDuration: 0.8)
             XCTAssertGreaterThan(
-                telemetry()["bullets"] ?? 0, beforeHold + 1, "Holding the center fires continuously")
+                telemetry()["shotID"] ?? 0, beforeHold + 1, "Holding the center fires continuously")
             fire.withOffset(CGVector(dx: 30, dy: 0)).press(forDuration: 0.6)
             XCTAssertGreaterThan(telemetry()["bullets"] ?? 0, 1, "The outer area retains continuous firing")
             capture(app, name: "Fire drag aim " + (fixed ? "fixed" : "Infinity"))

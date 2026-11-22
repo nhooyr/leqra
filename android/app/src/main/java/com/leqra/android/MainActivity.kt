@@ -1875,7 +1875,7 @@ class MainActivity : Activity() {
         panel.add(
             label(
                 this,
-                "Drag the left stick to drive and aim. Touch near your tank to rotate toward that point without moving. Drag the center of Fire to aim without shooting. Tap to shoot, or hold still to fire continuously. Drive with the joystick while aiming the turret independently with Fire. Pickups equip automatically.",
+                "Drag the left stick to drive and aim. Touch near your tank to rotate toward that point without moving. Tap Fire to shoot, or hold it to fire continuously. Drag Fire to aim while firing, even while driving with the joystick. Pickups equip automatically.",
                 13f,
             ),
         )
@@ -3383,7 +3383,7 @@ class MainActivity : Activity() {
         panel.add(
             label(
                 this,
-                "Drag the joystick to drive and aim. Touch near the tank to aim in place. Drag the center of Fire to aim without shooting. Tap to shoot, or hold still to fire continuously. Drive with the joystick while aiming the turret independently with Fire.",
+                "Drag the joystick to drive and aim. Touch near the tank to aim in place. Tap Fire to shoot, or hold it to fire continuously. Drag Fire to aim while firing, even while driving with the joystick.",
                 12f,
                 soft,
             ),

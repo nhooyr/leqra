@@ -79,8 +79,8 @@ def synchronize(root):
     current, separator, history = original.partition("\n# ")
     current = replace(current, r"^(# leqra )" + VERSION + r"(?= — current game protocol)",
                       lambda match: match[1] + version, 1, "docs/PROTOCOL.md title")
-    for packet_type in ("server_hello", "client_hello", "join"):
-        pattern = r'^(\s*\{\s*"type"\s*:\s*"' + packet_type + r'",\s*"version"\s*:\s*")' + GENERATED_VERSION + r'(?=")'
+    for packet_type in ("server_hello", "client_hello", "join", "welcome"):
+        pattern = r'^(\s*\{\s*"type"\s*:\s*"' + packet_type + r'",[^{}\n]*?"version"\s*:\s*")' + GENERATED_VERSION + r'(?=")'
         current = replace(current, pattern, lambda match: match[1] + version, 1,
                           f"docs/PROTOCOL.md current {packet_type} example")
     updated = current + separator + history

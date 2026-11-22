@@ -40,6 +40,7 @@ class VersionGenerationTests(unittest.TestCase):
                                  'Release v1.2.3 introduced this behavior.\n\n'
                                  '## Infinity\n\n'
                                  '```json\n{"type":"join","version":"1.2.3","protocol":7,"code":"FRIENDS"}\n'
+                                 '{"type":"welcome","protocol":7,"version":"v1.2.3","id":0}\n'
                                  '```\n\n' + HISTORICAL_PROTOCOL),
             "README.md": "Do not edit this v1.2.3 README.\n",
             "docs/releases/old.md": "Historical v1.2.3 release.\n",
@@ -82,6 +83,7 @@ class VersionGenerationTests(unittest.TestCase):
         self.assertTrue(protocol.startswith("# leqra v1.2.4 — current game protocol (protocol 7)\n"))
         for packet_type in ("server_hello", "client_hello", "join"):
             self.assertIn(f'"type":"{packet_type}","version":"v1.2.4","protocol":7', protocol)
+        self.assertIn('"type":"welcome","protocol":7,"version":"v1.2.4"', protocol)
         self.assertIn("Release v1.2.3 introduced this behavior.", protocol)
         self.assertTrue(protocol.endswith(HISTORICAL_PROTOCOL))
         for name in ("polish49_test.go", "polish410_test.go"):
@@ -108,6 +110,7 @@ class VersionGenerationTests(unittest.TestCase):
                 self.assertTrue(protocol.startswith(f"# leqra {version} — current game protocol"))
                 for packet_type in ("server_hello", "client_hello", "join"):
                     self.assertIn(f'"type":"{packet_type}","version":"{version}","protocol":7', protocol)
+                self.assertIn(f'"type":"welcome","protocol":7,"version":"{version}"', protocol)
                 self.assertTrue(protocol.endswith(HISTORICAL_PROTOCOL))
                 before = {str(path): path.stat().st_mtime_ns for path in self.root.rglob("*")}
                 self.assertEqual(self.run_script().returncode, 0)

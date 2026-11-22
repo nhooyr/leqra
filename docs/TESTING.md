@@ -15,6 +15,12 @@ The Python suite exercises local startup and deployment with mocked builds, brow
 
 Keep generated reports and screenshots local. Older raw results are available in the repository history.
 
+## Native CI checks
+
+`./ci/ios.sh` runs the Swift package tests in Release mode and the iPhone simulator smoke tests. It starts the newest installed standard iOS simulator while the package builds, disables indexing, and reuses compiler outputs. Cached source timestamps are restored only when file contents match, so changed inputs still rebuild.
+
+`./ci/android.sh` runs the core and app unit tests, Android lint, and debug app/test builds. It reuses installed SDK packages and installs any missing build requirements. With an emulator running, `./ci/android-smoke.sh` runs the same ten instrumented checks used by Actions. The tests continue to execute even when compilation is cached.
+
 ## Browser checks for the current release
 
 The maintained Playwright harnesses cover the quick tour, room regressions, touch and keyboard controls, and local and online play. The mobile checks use Pixel and iPhone browser profiles in Chromium and WebKit.
@@ -52,9 +58,12 @@ node src/tests/local_p2_layout_browser.cjs http://localhost:8080
 node src/tests/local_p2_input_browser.cjs http://localhost:8080 --disposable
 node src/tests/showcase_browser.cjs http://localhost:8080
 node src/tests/power_help_browser.cjs http://localhost:8080
+node src/tests/fire_aim_browser.cjs /tmp/leqra-fire-aim
 ```
 
 The PWA harness starts disposable local servers and checks background installation of compatible builds, deferral of breaking updates during matches, saved room setup, coherent offline reloads, and legacy worker migration in both engines. Testing an installed iOS Home Screen app requires a physical device.
+
+The Fire aiming harness starts its own disposable local server. It checks immediate and continuous firing from the center and edge of Fire, independent turret aim while driving, crosshair movement, and release in portrait and landscape. It covers fixed mazes, wall firing, offline Infinity, and real online Infinity connections in Chromium and WebKit.
 
 The typography harness checks the 10px minimum, full callsigns, and overflow in rooms, settings, fixed games, Infinity and pause menus, with one and two local pilots at desktop, phone and landscape sizes.
 

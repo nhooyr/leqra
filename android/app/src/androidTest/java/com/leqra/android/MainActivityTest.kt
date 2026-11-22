@@ -14,6 +14,7 @@ import android.view.ViewGroup
 import android.widget.TextView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.Configurator
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiSelector
 import com.leqra.android.render.NativeArenaView
@@ -252,7 +253,7 @@ class MainActivityTest {
             val instructions =
                 listOf(
                     "Drag the left stick to drive. Touch near your tank to aim without moving.",
-                    "Drag the center of Fire to aim without shooting. Tap to shoot, or hold still to fire continuously. Drive with the joystick while aiming the turret independently with Fire.",
+                    "Tap Fire to shoot, or hold it to fire continuously. Drag Fire to aim while firing, even while driving with the joystick.",
                     "Destroy the stationary tank to score a point.",
                 )
             fun point(name: String): Float =
@@ -1023,7 +1024,7 @@ class MainActivityTest {
                 session.selectMode("elimination")
                 invoke("showControls")
                 assertFalse(text().contains("Power-ups can stack"))
-                assertTrue(text().contains("Drag the center of Fire to aim without shooting"))
+                assertTrue(text().contains("Drag Fire to aim while firing"))
                 invoke("dismissDialog")
                 invoke("showRules")
                 panelViews()
@@ -1518,10 +1519,18 @@ class MainActivityTest {
                     session.localSelected = true
                     session.selectMode(mode)
                 }
-                val play =
-                    UiDevice.getInstance(instrumentation).findObject(UiSelector().text("PLAY"))
-                assertTrue("Native Play button is present for $mode", play.waitForExists(2000))
-                tap(play)
+                // The menu animates continuously; wait for PLAY, not for rendering to stop.
+                val configurator = Configurator.getInstance()
+                val idleTimeout = configurator.waitForIdleTimeout
+                configurator.waitForIdleTimeout = 0
+                try {
+                    val play =
+                        UiDevice.getInstance(instrumentation).findObject(UiSelector().text("PLAY"))
+                    assertTrue("Native Play button is present for $mode", play.waitForExists(2000))
+                    tap(play)
+                } finally {
+                    configurator.waitForIdleTimeout = idleTimeout
+                }
                 awaitPlaying(activity)
                 main {
                     assertEquals(Screen.PLAYING, session.screen)
@@ -2430,10 +2439,11 @@ class MainActivityTest {
                         }
                     }
                     touch(MotionEvent.ACTION_DOWN)
+                    assertTrue("Touching the center fires immediately", session.input.fire)
                     touch(MotionEvent.ACTION_MOVE, 7f)
                     assertFalse(session.input.snapAim)
                     touch(MotionEvent.ACTION_MOVE, 0f, -32f)
-                    assertFalse(session.input.fire)
+                    assertTrue("Dragging continues to fire", session.input.fire)
                     assertFalse(session.input.aimOnly)
                     assertFalse(session.input.snapAim)
                     assertEquals(0.0, session.input.stickX, .001)
@@ -2483,13 +2493,17 @@ class MainActivityTest {
                     assertEquals(0f, coordinate("fireCrosshairX"), .001f)
                     assertEquals(0f, coordinate("fireCrosshairY"), .001f)
                     assertEquals(-1.0, session.input.aimY, .001)
-                    assertFalse("Center dragging never sends a fire edge", observed.any { it })
+                    assertTrue(
+                        "Center dragging holds Fire until release",
+                        observed.dropLast(1).all { it },
+                    )
+                    assertFalse(observed.last())
                     observed.clear()
                     touch(MotionEvent.ACTION_DOWN)
                     touch(MotionEvent.ACTION_UP)
                     assertEquals(
-                        "A center tap sends one fire edge on release",
-                        listOf(false, true, false),
+                        "A center tap fires on press and stops on release",
+                        listOf(true, false),
                         observed,
                     )
                     touch(MotionEvent.ACTION_DOWN)
@@ -2535,6 +2549,7 @@ class MainActivityTest {
                     }
                 }
                 centerTouch(MotionEvent.ACTION_DOWN)
+                main { assertTrue("Center Fire has no hold delay", state(activity).input.fire) }
                 SystemClock.sleep(220)
                 main {
                     assertTrue("Holding the center keeps Fire down", state(activity).input.fire)
@@ -2545,7 +2560,7 @@ class MainActivityTest {
                 centerTouch(MotionEvent.ACTION_CANCEL)
                 SystemClock.sleep(220)
                 main {
-                    assertFalse("Cancellation clears the delayed hold", state(activity).input.fire)
+                    assertFalse("Cancellation keeps Fire released", state(activity).input.fire)
                 }
             } finally {
                 main { activity.finish() }

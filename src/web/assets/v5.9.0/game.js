@@ -20,7 +20,7 @@
       "This browser cannot create a 2D canvas. Please open the game in another browser."
     return
   }
-  const GAME_VERSION = "v5.8.3"
+  const GAME_VERSION = "v5.9.0"
   const GAME_PROTOCOL = 1
   const TAU = Math.PI * 2,
     CELL = 84,
@@ -1905,7 +1905,6 @@
     keys.clear()
     gamepads.clear()
     firePointers.clear()
-    clearTimeout(fireDrag.holdTimer)
     fireDrag.id = null
     fireDrag.active = false
     firePresses.clear()
@@ -14111,7 +14110,7 @@
             .join(" ")
     const help =
       device === "touch"
-        ? "Drag the stick to move and aim. Touch near the tank to aim in place. Drag the center of Fire to aim without shooting. Tap to shoot, or hold still to fire continuously. Drive with the joystick while aiming the turret independently with Fire."
+        ? "Drag the stick to move and aim. Touch near the tank to aim in place. Tap Fire to shoot, or hold it to fire continuously. Drag Fire to aim while firing, even while driving with the joystick."
         : ""
     return (
       '<span class="control-player">' +
@@ -14135,7 +14134,7 @@
       paired = !aliases && !!(infinity?.twoPilots || hasLocalP2())
     const fireTip = '<p class="manual-fire-tip">Hold any fire key to rapid fire.</p>'
     let html =
-      '<div class="manual-line manual-touch"><span>Touch</span><span>Drag the joystick to drive and aim. Touch near the tank to aim in place. Drag the center of Fire to aim without shooting. Tap to shoot, or hold still to fire continuously. Drive with the joystick while aiming the turret independently with Fire.</span></div>'
+      '<div class="manual-line manual-touch"><span>Touch</span><span>Drag the joystick to drive and aim. Touch near the tank to aim in place. Tap Fire to shoot, or hold it to fire continuously. Drag Fire to aim while firing, even while driving with the joystick.</span></div>'
     html += "<p>Connect a game controller to play.</p>"
     html += '<div class="manual-controls">' + pilotControlHint(0, "mouse", aliases, !aliases)
     if (paired) html += pilotControlHint(1, "", false, true)
@@ -16636,17 +16635,13 @@
       for (const code of keys) if (bindings[code] === action) return true
       return false
     }
-    const practiceFireHeld = () =>
-      held("fire") ||
-      (fireID !== null && (!practiceFireDrag?.center || practiceFireDrag.firing)) ||
-      !!gamepadInput(0)?.fire
+    const practiceFireHeld = () => held("fire") || fireID !== null || !!gamepadInput(0)?.fire
     function clearPracticeInput() {
       keys.clear()
       gamepads.clear()
       stickID = aimID = fireID = null
       stickX = stickY = 0
       touchAim = fireAim = mousePoint = null
-      clearTimeout(practiceFireDrag?.holdTimer)
       practiceFireDrag = null
       fireButton.style.setProperty("--fire-aim-x", "0px")
       fireButton.style.setProperty("--fire-aim-y", "0px")
@@ -16801,24 +16796,11 @@
           y: e.clientY,
           active: false,
           reach: Math.min(24, Math.max(0, Math.min(rect.width, rect.height) / 2 - 17)),
-          center: Net.fireAimCenter(
-            e.clientX - rect.left - rect.width / 2,
-            e.clientY - rect.top - rect.height / 2,
-          ),
         }
       }
-      if (practiceFireDrag?.center) {
-        const drag = practiceFireDrag
-        drag.holdTimer = setTimeout(() => {
-          if (practiceFireDrag !== drag || drag.active || !interactive()) return
-          drag.firing = true
-          firePressed = true
-          fireButton.classList.add("held")
-        }, 180)
-      }
-      if (!was && !practiceFireDrag?.center) firePressed = true
+      if (!was) firePressed = true
       capturePointer(element, fireID)
-      if (element === fireButton && !practiceFireDrag?.center) fireButton.classList.add("held")
+      if (element === fireButton) fireButton.classList.add("held")
     }
     fireButton.addEventListener("pointerdown", (e) => {
       if (interactive() && usesTouch() && e.button === 0) beginPracticeFire(e, fireButton)
@@ -16858,7 +16840,6 @@
         const direction = Net.fireAimDirection(e.clientX - practiceFireDrag.x, e.clientY - practiceFireDrag.y)
         if (direction) {
           e.preventDefault()
-          clearTimeout(practiceFireDrag.holdTimer)
           practiceFireDrag.active = true
           touchAim = null
           fireAim = Math.atan2(direction.y, direction.x)
@@ -16890,18 +16871,11 @@
         if (e.type === "pointercancel") touchAim = null
       }
       if (e.pointerId === fireID) {
-        const tap =
-          practiceFireDrag?.center &&
-          !practiceFireDrag.active &&
-          !practiceFireDrag.firing &&
-          e.type === "pointerup"
-        clearTimeout(practiceFireDrag?.holdTimer)
         if (practiceFireDrag?.active && e.type === "pointercancel") fireAim = null
         practiceFireDrag = null
         fireID = null
         fireButton.style.setProperty("--fire-aim-x", "0px")
         fireButton.style.setProperty("--fire-aim-y", "0px")
-        if (tap && !practiceFireHeld()) firePressed = true
         fireButton.classList.remove("held")
         if (e.type === "pointerup") primeAudioUnlock(e)
       }
@@ -17512,7 +17486,7 @@
   }
   // All input paths (keyboard, mouse, multi-touch, focus loss) share the same cleanup.
   const directAim = { active: false, id: null, angle: 0, independent: false }
-  const fireDrag = { id: null, x: 0, y: 0, active: false, center: false }
+  const fireDrag = { id: null, x: 0, y: 0, active: false }
   function clearDirectAim() {
     directAim.active = false
     directAim.independent = false
@@ -17655,34 +17629,18 @@
         x: e.clientX,
         y: e.clientY,
         active: false,
-        firing: false,
         reach: Math.min(24, Math.max(0, Math.min(rect.width, rect.height) / 2 - 17)),
-        center: Net.fireAimCenter(
-          e.clientX - rect.left - rect.width / 2,
-          e.clientY - rect.top - rect.height / 2,
-        ),
       })
     }
-    const center = fireDrag.id === e.pointerId && fireDrag.center
-    if (center)
-      fireDrag.holdTimer = setTimeout(() => {
-        if (fireDrag.id !== e.pointerId || fireDrag.active) return
-        fireDrag.firing = true
-        const wasHeld = primaryFireHeld()
-        firePointers.add(e.pointerId)
-        if (!wasHeld) firePresses.add(localPlayerID())
-        $("fireBtn").classList.add("held")
-        if (mode === "online") sendOnlineInput(true)
-      }, 180)
-    if (!center) firePointers.add(e.pointerId)
+    firePointers.add(e.pointerId)
     if (e.pointerType === "mouse") (mouseAim.firePointers ??= new Set()).add(e.pointerId)
-    if (!was && !center) {
+    if (!was) {
       if (e.pointerType === "mouse") mouseAim.firePressed = true
       else firePresses.add(localPlayerID())
     }
     capturePointer(element, e.pointerId)
-    if (!secondary && !center) $("fireBtn").classList.add("held")
-    if (!was && !center && mode === "online") sendOnlineInput(true)
+    if (!secondary) $("fireBtn").classList.add("held")
+    if (!was && mode === "online") sendOnlineInput(true)
   }
   $("fireBtn").addEventListener("pointerdown", (e) => {
     if (e.button === 0) beginPointerFire(e, $("fireBtn"))
@@ -17694,7 +17652,6 @@
       const direction = Net.fireAimDirection(e.clientX - fireDrag.x, e.clientY - fireDrag.y)
       if (!direction) return
       e.preventDefault()
-      clearTimeout(fireDrag.holdTimer)
       fireDrag.active = true
       directAim.active = true
       directAim.independent = true
@@ -17709,9 +17666,7 @@
   )
   function endFire(e) {
     const pending = e.pointerId === fireDrag.id
-    const tap = pending && fireDrag.center && !fireDrag.active && !fireDrag.firing && e.type === "pointerup"
     if (pending) {
-      clearTimeout(fireDrag.holdTimer)
       if (fireDrag.active && e.type === "pointercancel") clearDirectAim()
       fireDrag.id = null
       fireDrag.active = false
@@ -17724,7 +17679,6 @@
     if (firePointers.size <= (hardwareUsesP2() ? mouseAim.firePointers?.size || 0 : 0))
       $("fireBtn").classList.remove("held")
     if (e.type === "pointerup") primeAudioUnlock(e)
-    if (tap) tapFire()
     if (mode === "online") sendOnlineInput(true)
   }
   $("fireBtn").addEventListener("pointerup", endFire)
