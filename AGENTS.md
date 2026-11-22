@@ -45,6 +45,6 @@ Keep `index.html` at the web root and all other browser files in the current ver
 
 ## Commit & Pull Request Guidelines
 
-Update `CHANGELOG.md` as changes are made, under the next unreleased version. Reuse an existing unreleased section; otherwise start the next patch version after the version returned by `./scripts/version.sh`. Capitalize `Unreleased` in changelog headings, for example `## v5.8.1 (Unreleased)`. Keep released entries intact and do not bump the application version solely to maintain the changelog.
+Update `CHANGELOG.md` as user-visible changes are made, under the next unreleased version. Omit entries for CI, tests, and other internal-only changes. Reuse an existing unreleased section; otherwise start the next patch version after the version returned by `./scripts/version.sh`. Capitalize `Unreleased` in changelog headings, for example `## v5.8.1 (Unreleased)`. Keep released entries intact and do not bump the application version solely to maintain the changelog.
 
 History primarily uses release subjects such as `v4.45.1` and short descriptions; no Conventional Commits scheme is enforced. Use concise, descriptive summaries. PRs should explain behavior changes, link relevant issues, list validation, and include screenshots for visible UI changes.

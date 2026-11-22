@@ -92,6 +92,11 @@ class MainActivityTest {
     }
 
     private fun startActivity(invite: Uri? = null): MainActivity {
+        // A booted emulator can still be asleep or locked when instrumentation starts.
+        UiDevice.getInstance(instrumentation).apply {
+            wakeUp()
+            executeShellCommand("wm dismiss-keyguard")
+        }
         val intent =
             Intent(instrumentation.targetContext, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
@@ -124,6 +129,23 @@ class MainActivityTest {
             if (view is ViewGroup)
                 (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) }
             else emptyList()
+
+    @Test
+    fun launchWakesSleepingDevice() {
+        val device = UiDevice.getInstance(instrumentation)
+        var activity: MainActivity? = null
+        try {
+            device.sleep()
+            assertFalse("The regression starts with the screen asleep", device.isScreenOn)
+            val launched = launch()
+            activity = launched
+            assertTrue("Launching wakes the screen", device.isScreenOn)
+            assertTrue("Launching gives the app input focus", main { launched.hasWindowFocus() })
+        } finally {
+            device.wakeUp()
+            main { activity?.finish() }
+        }
+    }
 
     @Test
     fun spectatorInvitePrefillsTheConfirmationPanelWithoutJoining() {
