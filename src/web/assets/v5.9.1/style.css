@@ -1010,6 +1010,9 @@ body.touch-ui .arena-wrap {
   height: auto;
 }
 body.touch-ui .underbar {
+  order: -1;
+  border-top: 0;
+  border-bottom: 1px solid var(--border);
   min-height: 37px;
   padding: 8px 13px;
 }
@@ -6634,6 +6637,19 @@ body #roomScreen.unified-room .infinity-toggle:not([hidden]) + #startRoomBtn {
   border-radius: 0;
   overflow: hidden;
   background: var(--surface-sunken);
+}
+body.touch-ui #infiniteArena[open] {
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+}
+body.touch-ui #infiniteArena > .infinite-underbar {
+  grid-row: 3;
+  border-top: 0;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+}
+body.touch-ui #infiniteArena > .infinite-stage {
+  grid-row: 4;
+  margin-bottom: env(safe-area-inset-bottom);
 }
 .infinite-header {
   padding: 20px;

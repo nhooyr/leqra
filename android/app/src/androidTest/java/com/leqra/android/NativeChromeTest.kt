@@ -9,6 +9,8 @@ import android.widget.TextView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.leqra.android.NativeStyle.dp
+import com.leqra.core.ArenaSnapshot
+import com.leqra.core.ArenaTank
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -66,6 +68,39 @@ class NativeChromeTest {
             assertEquals(BuildConfig.VERSION_NAME, badge.text.toString())
             assertTrue(sidebar.performClick())
             assertTrue(openedSidebar)
+        }
+    }
+
+    @Test
+    fun statusPanelHasMatchingTopAndBottomBorders() {
+        instrumentation.runOnMainSync {
+            val context = instrumentation.targetContext
+            for (stacked in listOf(false, true)) {
+                val status =
+                    NativeHudView(context).apply {
+                        compact = true
+                        this.stacked = stacked
+                        update(
+                            ArenaSnapshot(tanks = listOf(ArenaTank(id = 1), ArenaTank(id = 2))),
+                            1,
+                            2,
+                            infinity = true,
+                            paused = false,
+                            online = false,
+                        )
+                    }
+                layout(status, context.dp(390), context.dp(200))
+                val bitmap =
+                    Bitmap.createBitmap(status.width, status.height, Bitmap.Config.ARGB_8888)
+                try {
+                    status.draw(Canvas(bitmap))
+                    val border = 0xff34434a.toInt()
+                    assertEquals(border, bitmap.getPixel(status.width / 2, 0))
+                    assertEquals(border, bitmap.getPixel(status.width / 2, status.height - 1))
+                } finally {
+                    bitmap.recycle()
+                }
+            }
         }
     }
 

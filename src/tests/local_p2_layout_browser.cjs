@@ -21,6 +21,7 @@ const profiles = [
   [844, 390],
   [768, 1024],
   [1024, 768],
+  [1280, 900, false],
 ].filter(([width]) => !widthFilter || widthFilter === width)
 const names = ["WIDE PILOT ALPHA", "WIDE PILOT BRAVO"]
 const errors = []
@@ -74,11 +75,13 @@ async function checkHUD(page, arena, variant, label) {
       return {
         width: innerWidth,
         height: innerHeight,
+        touch: document.body.classList.contains("touch-ui"),
         bodyWidth: document.body.scrollWidth,
         version: rect(document.querySelector("#headerVersion")),
         versionText: document.querySelector("#headerVersion").textContent,
         captions: document.querySelector(arena === "fixed" ? "#touchControls" : ".infinite-touch-controls")
           .innerText,
+        header: rect(document.querySelector("#gameHeader")),
         stage: rect(document.querySelector(arena === "fixed" ? "#arenaWrap" : ".infinite-stage")),
         panels: ids.map((id) => {
           const panel = document.getElementById(id),
@@ -122,6 +125,12 @@ async function checkHUD(page, arena, variant, label) {
   for (const [index, panel] of data.panels.entries()) {
     assert.equal(panel.name, names[index] + " (P" + (index + 1) + ")", label + " identity")
     assert.ok(Number(panel.weight) >= 700, label + " identity is not bold")
+    if (data.touch)
+      assert.ok(
+        panel.rect.top >= data.header.bottom - 1 && panel.rect.bottom <= data.stage.top + 1,
+        label + " pilot status must stay between the header and playfield",
+      )
+    else assert.ok(panel.rect.top >= data.stage.bottom - 1, label + " desktop status stays below the arena")
     assert.ok(
       panel.rect.left >= -1 &&
         panel.rect.right <= data.width + 1 &&
@@ -157,11 +166,11 @@ async function checkHUD(page, arena, variant, label) {
   for (const [name, type] of Object.entries({ chromium, webkit })) {
     if (selected && selected !== name) continue
     const browser = await type.launch({ headless: true })
-    for (const [width, height] of profiles) {
+    for (const [width, height, touch = true] of profiles) {
       const context = await browser.newContext({
         viewport: { width, height },
-        hasTouch: true,
-        isMobile: true,
+        hasTouch: touch,
+        isMobile: touch,
         serviceWorkers: "block",
       })
       await context.addInitScript(() => {

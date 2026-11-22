@@ -40,7 +40,7 @@ internal class QuickTour(
             "Drive and aim" to
                 "Drag the left stick to drive. Touch near your tank to aim without moving.",
             "Fire" to
-                "Tap Fire to shoot, or hold it to fire continuously. Drag Fire to aim while firing, even while driving with the joystick.",
+                "Tap Fire to shoot, or hold it to fire continuously. Press off-center or drag Fire to aim while firing, even while driving with the joystick.",
             "Score a point" to "Destroy the stationary tank to score a point.",
         )
     private var page = 0

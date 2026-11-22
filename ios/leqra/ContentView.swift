@@ -4,7 +4,6 @@ import leqraCore
 struct ContentView: View {
     @ObservedObject var session: GameSession
     @Environment(\.scenePhase) private var scenePhase
-    @State private var fixedLoadoutHeight: CGFloat = 97
     var body: some View {
         GeometryReader { geometry in
             let landscape = geometry.size.width > geometry.size.height
@@ -128,13 +127,19 @@ struct ContentView: View {
         let split = session.isInfinity && session.secondaryLocalID != nil
         let canControl = !session.spectating || session.secondaryLocalID != nil
         let overlayHeight: CGFloat =
-            !session.isInfinity && !landscape && !session.spectating ? fixedLoadoutHeight + 119 : 0
+            !session.isInfinity && !landscape && !session.spectating ? 119 : 0
         return VStack(spacing: 0) {
             ArenaStatusBar(session: session)
             if let objective = session.snapshot.objectives,
                 ["ctf", "koth", "survival"].contains(objective.mode)
             {
                 objectiveBar(objective)
+            }
+            if canControl {
+                LocalPilotLoadouts(session: session, landscape: landscape)
+                    .overlay(alignment: .bottom) {
+                        WebStyle.border.frame(height: 1).allowsHitTesting(false)
+                    }
             }
             ZStack(alignment: .topTrailing) {
                 if split {
@@ -154,24 +159,12 @@ struct ContentView: View {
                         scene: session.scene, highFrameRate: session.highFrameRate,
                         paused: session.paused || session.hasModal,
                         infinity: session.isInfinity, landscape: landscape,
-                        loadoutHeight: fixedLoadoutHeight, spectating: !canControl,
+                        spectating: !canControl,
                         hardwareInputScene: session.secondaryLocalID == nil
                             ? session.scene : session.secondaryScene,
                         showsTouchControls: !session.spectating, renderingSuspended: session.showQuickTour
                     )
                     .accessibilityIdentifier("arenaStage")
-                    if !session.isInfinity && !landscape && !session.spectating {
-                        VStack {
-                            Spacer(minLength: 0)
-                            LocalPilotLoadouts(session: session, landscape: landscape)
-                                .background(
-                                    GeometryReader { geometry in
-                                        Color.clear.preference(
-                                            key: LoadoutHeightKey.self, value: geometry.size.height)
-                                    })
-                            Color.clear.frame(height: 119)
-                        }.allowsHitTesting(false)
-                    }
                 }
                 if session.showScores { ArenaStandings(session: session).padding(10) }
                 announcements.padding(.bottom, overlayHeight)
@@ -193,11 +186,7 @@ struct ContentView: View {
                     results.padding(.bottom, overlayHeight)
                 }
             }
-            if !split && canControl && (session.isInfinity || landscape || session.spectating) {
-                LocalPilotLoadouts(session: session, landscape: landscape)
-            }
-        }.onPreferenceChange(LoadoutHeightKey.self) { if $0 > 0 { fixedLoadoutHeight = $0 } }
-            .background(WebStyle.sunken).clipShape(RoundedRectangle(cornerRadius: session.isInfinity ? 0 : 9))
+        }.background(WebStyle.sunken).clipShape(RoundedRectangle(cornerRadius: session.isInfinity ? 0 : 9))
             .overlay(
                 RoundedRectangle(cornerRadius: session.isInfinity ? 0 : 9).stroke(
                     session.isInfinity ? .clear : WebStyle.edge, lineWidth: 1
@@ -215,7 +204,6 @@ struct ContentView: View {
                 renderingSuspended: session.showQuickTour
             )
             .accessibilityIdentifier(seat == 0 ? "arenaStage" : "secondaryArenaStage")
-            PilotLoadoutView(session: session, compact: true, seat: seat, paired: landscape)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -353,9 +341,4 @@ struct ContentView: View {
     private var winnerColor: Color {
         session.winnerIdentity.map { WebStyle.mapped($0.color) } ?? WebStyle.accent
     }
-}
-
-private struct LoadoutHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 97
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }

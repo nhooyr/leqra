@@ -673,7 +673,7 @@ struct ControlsPanel: View {
                         Text("Touch controls P1.").font(.system(size: 12)).foregroundStyle(WebStyle.soft)
                     }
                     Text(
-                        "Drag the left stick to drive and aim. Touch near your tank to rotate exactly toward that point without moving. Tap Fire to shoot, or hold it to fire continuously. Drag Fire to aim while firing, even while driving with the joystick. Pickups equip automatically."
+                        "Drag the left stick to drive and aim. Touch near your tank to rotate exactly toward that point without moving. Tap Fire to shoot, or hold it to fire continuously. Press off-center or drag Fire to aim while firing, even while driving with the joystick. Pickups equip automatically."
                     ).font(.system(size: 13)).lineSpacing(5)
                     HardwareControlsPanel(
                         session: session, keyboardConnected: keyboardConnected, mouseConnected: mouseConnected
@@ -761,7 +761,7 @@ private struct QuickTourPanel: View {
         ("Drive and aim", "Drag the left stick to drive. Touch near your tank to aim without moving."),
         (
             "Fire",
-            "Tap Fire to shoot, or hold it to fire continuously. Drag Fire to aim while firing, even while driving with the joystick."
+            "Tap Fire to shoot, or hold it to fire continuously. Press off-center or drag Fire to aim while firing, even while driving with the joystick."
         ),
         ("Score a point", "Destroy the stationary tank to score a point."),
     ]
@@ -905,7 +905,7 @@ private struct QuickTourPanel: View {
         scene.scaleMode = .resizeFill
         scene.showsTankIdentities = false
         scene.showsFireControl = false
-        scene.configureLayout(infinity: false, landscape: false, loadoutHeight: 0)
+        scene.configureLayout(infinity: false, landscape: false)
         scene.onFrame = { [weak self] dt in self?.advance(dt) }
         scene.onFireChanged = { [weak self] down in
             guard let self, self.scene.showsFireControl else { return }
@@ -1128,7 +1128,7 @@ struct FieldManualContent: View {
             Text("FIELD MANUAL").font(WebStyle.mono()).foregroundStyle(WebStyle.accent)
             Text("Touch").font(.system(size: 13, weight: .semibold))
             Text(
-                "Drag the joystick to drive and aim. Touch near the tank to aim in place. Tap Fire to shoot, or hold it to fire continuously. Drag Fire to aim while firing, even while driving with the joystick."
+                "Drag the joystick to drive and aim. Touch near the tank to aim in place. Tap Fire to shoot, or hold it to fire continuously. Press off-center or drag Fire to aim while firing, even while driving with the joystick."
             ).font(.system(size: 12)).foregroundStyle(WebStyle.soft)
             if includeSidebarControls {
                 Text("Connect a game controller to play.")

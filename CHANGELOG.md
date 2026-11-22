@@ -1,5 +1,10 @@
 # Changelog
 
+## v5.9.1 (Unreleased)
+
+- Aim from the Fire button's center as soon as it is pressed, so the first shot follows the press direction on mobile web, iOS, and Android.
+- Move the mobile ammunition, weapon, and readiness status below the top header on web, iOS, and Android, keeping it clear of the touch controls with matching borders above and below.
+
 ## v5.9.0
 
 - Fire immediately and continuously while holding or dragging the mobile Fire button, including while aiming the turret independently and driving with the joystick, on web, iOS, and Android.

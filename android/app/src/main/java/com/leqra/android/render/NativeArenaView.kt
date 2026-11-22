@@ -26,14 +26,6 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         }
 
     var hudHeightDp = 0f
-    var overlayHudHeightDp = 0f
-    var pairedHudHeightDp = 0f
-        set(value) {
-            if (field == value) return
-            field = value
-            invalidate()
-        }
-
     var controlsLayout = true
     var showFireControl = true
     var showTankLabels = true
@@ -56,8 +48,6 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     private val deathNotices = Array(2) { NativeDeathNotice() }
     private val touchControls = GameInput(touchAim = true)
     private var fireAim: Pair<Double, Double>? = null
-    private var fireTouchX = 0f
-    private var fireTouchY = 0f
     private var fireCrosshairX = 0f
     private var fireCrosshairY = 0f
     val input: GameInput
@@ -642,9 +632,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             if (infinity) 0f else safe.left,
             safe.top + hudHeightDp,
             if (infinity) width else width - safe.right,
-            height -
-                safe.bottom -
-                if (!infinity && !landscape && controlsLayout) 119f + overlayHudHeightDp else 0f,
+            height - safe.bottom - if (!infinity && !landscape && controlsLayout) 119f else 0f,
         )
         if (viewport.width() <= 0 || viewport.height() <= 0) {
             canvas.restore()
@@ -652,13 +640,11 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         }
         fullViewport.set(viewport)
         val paired = infinity && localID2 != null && followingID == null
-        val pairedHudHeight =
-            if (paired) min(pairedHudHeightDp, max(0f, fullViewport.height() - 2f)) else 0f
-        val sideBySide = landscape && pairedHudHeight == 0f
+        val sideBySide = landscape
         primaryViewport.set(fullViewport)
         if (paired) {
             if (sideBySide) primaryViewport.right = fullViewport.centerX()
-            else primaryViewport.bottom = fullViewport.centerY() - pairedHudHeight / 2
+            else primaryViewport.bottom = fullViewport.centerY()
         }
         // Virtual controls always belong to P1, including after rotating a paired arena.
         if (paired) controlViewport.set(primaryViewport)
@@ -676,7 +662,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             if (paired) {
                 viewport.set(fullViewport)
                 if (sideBySide) viewport.left = primaryViewport.right
-                else viewport.top = primaryViewport.bottom + pairedHudHeight
+                else viewport.top = primaryViewport.bottom
                 drawWorldScene(canvas, state, landscape, localID2!!)
             }
             pruneProjectileHistory()
@@ -1753,6 +1739,17 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         }
     }
 
+    private fun updateFireAim(x: Float, y: Float) {
+        val dx = x - fireX
+        val dy = y - fireY
+        val distance = hypot(dx, dy)
+        if (!distance.isFinite() || distance < 8f) return
+        fireAim = (dx / distance).toDouble() to (dy / distance).toDouble()
+        val scale = min(1f, 24f / distance)
+        fireCrosshairX = dx * scale
+        fireCrosshairY = dy * scale
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (frozenTime != null) return true
         if (event.isFromSource(InputDevice.SOURCE_MOUSE)) return mouseEvent(event)
@@ -1827,8 +1824,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                         y > controlViewport.bottom - max(210f, controlViewport.height() * .38f)
                 ) {
                     firePointer = pointer
-                    fireTouchX = x
-                    fireTouchY = y
+                    updateFireAim(x, y)
                     touchControls.fire = true
                     fireHeld = true
                 }
@@ -1839,15 +1835,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                 if (target >= 0) aim(target) else if (stick >= 0) update(stick)
                 val fire = event.findPointerIndex(firePointer)
                 if (fire >= 0) {
-                    val dx = event.getX(fire) / density - fireTouchX
-                    val dy = event.getY(fire) / density - fireTouchY
-                    val distance = hypot(dx, dy)
-                    if (distance.isFinite() && distance >= 8f) {
-                        fireAim = (dx / distance).toDouble() to (dy / distance).toDouble()
-                        val scale = min(1f, 24f / distance)
-                        fireCrosshairX = dx * scale
-                        fireCrosshairY = dy * scale
-                    }
+                    updateFireAim(event.getX(fire) / density, event.getY(fire) / density)
                 }
             }
             MotionEvent.ACTION_UP,

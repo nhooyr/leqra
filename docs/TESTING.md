@@ -63,15 +63,16 @@ node src/tests/fire_aim_browser.cjs /tmp/leqra-fire-aim
 
 The PWA harness starts disposable local servers and checks background installation of compatible builds, deferral of breaking updates during matches, saved room setup, coherent offline reloads, and legacy worker migration in both engines. Testing an installed iOS Home Screen app requires a physical device.
 
-The Fire aiming harness starts its own disposable local server. It checks immediate and continuous firing from the center and edge of Fire, independent turret aim while driving, crosshair movement, and release in portrait and landscape. It covers fixed mazes, wall firing, offline Infinity, and real online Infinity connections in Chromium and WebKit.
+The Fire aiming harness starts its own disposable local server. It checks the first projectile's direction from an off-center press, immediate and continuous firing, independent turret aim while driving, crosshair movement, and release in portrait and landscape. It covers fixed mazes, wall firing, offline Infinity, and real online Infinity connections in Chromium and WebKit.
 
 The typography harness checks the 10px minimum, full callsigns, and overflow in rooms, settings, fixed games, Infinity and pause menus, with one and two local pilots at desktop, phone and landscape sizes.
 
 The chat harness sends messages in both directions from lobbies, fixed matches,
 and Room Infinity in desktop, mobile, and simulated standalone PWA layouts.
 Native iOS and Android apps intentionally omit chat. The touch-control harness
-checks that a fully deflected joystick and firing ring stay clear of the loadout
-panel, the target is centered, control captions are absent, and instructions
+checks that the mobile loadout panel sits below the header and above the playfield,
+a fully deflected joystick and firing ring stay clear of it, the target is centered,
+control captions are absent, and instructions
 remain in the sidebar/help.
 
 The local P2 harnesses check phone/tablet layouts and touch plus external

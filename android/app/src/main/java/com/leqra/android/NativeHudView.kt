@@ -26,6 +26,14 @@ internal class NativeHudView(context: Context) : View(context) {
             invalidate()
         }
 
+    var stacked = false
+        set(value) {
+            if (field == value) return
+            field = value
+            requestLayout()
+            invalidate()
+        }
+
     var safeLeft = 0
     var safeRight = 0
     var safeBottom = 0
@@ -270,11 +278,12 @@ internal class NativeHudView(context: Context) : View(context) {
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val width = MeasureSpec.getSize(widthMeasureSpec)
+        val columns = if (stacked) 1 else max(1, slots.size)
         var height =
-            (if (compact) if (slots.size > 1) 84f else 54f else if (slots.size > 1) 136f else 97f) *
+            (if (compact) if (columns > 1) 84f else 54f else if (columns > 1) 136f else 97f) *
                 fontScale
         val usable = (width - safeLeft - safeRight) / density - 26f
-        val cellWidth = (usable - if (slots.size > 1) 16f else 0f) / max(1, slots.size)
+        val cellWidth = (usable - if (columns > 1) 16f else 0f) / columns
         var compactTop = 0f
         var compactBottom = 0f
         for (slot in slots) {
@@ -356,6 +365,7 @@ internal class NativeHudView(context: Context) : View(context) {
             compactSecondY = 6f + compactTop + 6f
             height = max(height, compactSecondY + compactBottom + 6f)
         }
+        if (stacked) height *= max(1, slots.size)
         setMeasuredDimension(
             width,
             resolveSize(ceil(height * density + safeBottom).toInt(), heightMeasureSpec),
@@ -380,12 +390,31 @@ internal class NativeHudView(context: Context) : View(context) {
         if (slots.isEmpty())
             spectator.draw(canvas, "SPECTATING", left, 8f, right - left, NativeStyle.soft)
         else {
-            val gap = if (slots.size > 1) 16f else 0f
-            val cellWidth = (right - left - gap * (slots.size - 1)) / slots.size
+            val gap = if (!stacked && slots.size > 1) 16f else 0f
+            val cellWidth =
+                if (stacked) right - left else (right - left - gap * (slots.size - 1)) / slots.size
+            val cellHeight = if (stacked) height / slots.size else height
             slots.forEachIndexed { index, slot ->
-                drawSlot(canvas, slot, left + index * (cellWidth + gap), cellWidth, height)
+                canvas.save()
+                if (stacked) {
+                    canvas.translate(0f, index * cellHeight)
+                    if (index > 0) {
+                        paint.color = 0xff34434a.toInt()
+                        canvas.drawRect(0f, 0f, width, 1f, paint)
+                    }
+                }
+                drawSlot(
+                    canvas,
+                    slot,
+                    if (stacked) left else left + index * (cellWidth + gap),
+                    cellWidth,
+                    cellHeight,
+                )
+                canvas.restore()
             }
         }
+        paint.color = 0xff34434a.toInt()
+        canvas.drawRect(0f, height - 1f, width, height, paint)
         canvas.restore()
     }
 

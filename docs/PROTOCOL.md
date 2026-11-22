@@ -1,10 +1,10 @@
-# leqra v5.9.0 — current game protocol (protocol 1)
+# leqra v5.9.1 — current game protocol (protocol 1)
 
 The network protocol epoch is **1**. Clients and servers can play together when they use the same epoch. Release versions identify builds and remain available for display and update prompts. Current versions include their `v` prefix and optional suffix, such as `v5.8.1-dev`.
 
 ```json
-{"type":"server_hello","version":"v5.9.0","protocol":1}
-{"type":"client_hello","version":"v5.9.0","protocol":1}
+{"type":"server_hello","version":"v5.9.1","protocol":1}
+{"type":"client_hello","version":"v5.9.1","protocol":1}
 ```
 
 The fixed-room socket requires `client_hello` before room and matchmaking actions. The server replies with `client_ready` on success. An incompatible protocol receives an error with `code: "version_mismatch"`, `action: "version"`, `serverVersion`, and the required `protocol`.
@@ -52,8 +52,8 @@ Private `welcome` includes the run's `generation`. If the Infinity socket discon
 A room spectator can watch a running **private** Infinity arena without taking a tank seat:
 
 ```json
-{"type":"join","version":"v5.9.0","protocol":1,"code":"FRIENDS","token":"existing-room-token","spectating":true,"resume":true,"generation":3,"target":12}
-{"type":"welcome","protocol":1,"version":"v5.9.0","id":0,"seed":123,"generation":3,"resumed":true,"spectating":true,"following":12}
+{"type":"join","version":"v5.9.1","protocol":1,"code":"FRIENDS","token":"existing-room-token","spectating":true,"resume":true,"generation":3,"target":12}
+{"type":"welcome","protocol":1,"version":"v5.9.1","id":0,"seed":123,"generation":3,"resumed":true,"spectating":true,"following":12}
 ```
 
 The room token must identify a current human spectator in that room and generation. The `spectating` flag alone grants no access; combat pilots, forged tokens, other rooms, and Public Infinity cannot use this path. No tank, score, account, input authority, player capacity, readiness, or roaming-bot population is allocated. Spectator welcomes contain no local tank ID or account bearer. The ordinary room socket remains connected for membership and role changes.
@@ -152,7 +152,7 @@ Desktop Player 1 sends the cursor direction using the existing bounded `stickX` 
 
 Independent turret aiming sends a separate bounded `aimX`/`aimY` direction while `stickX`/`stickY` continue to drive the hull. A zero aim vector uses legacy coupled steering. With independent aim, snapshots keep `angle` as the gun heading and add `independentAim:true` plus `bodyAngle` for the hull (zero when omitted). Position and collisions use the hull heading; muzzle clearance, projectiles, and firing guides use the gun heading.
 
-On mobile web, iOS, and Android, pressing any part of Fire immediately holds `fire:true`. Dragging updates `aimX`/`aimY` while keeping `fire:true`, including when the joystick supplies movement. Release or cancellation clears Fire without creating another press edge. Touching near the tank remains a separate aim-only gesture. The same controls apply in the quick tour.
+On mobile web, iOS, and Android, pressing any part of Fire immediately holds `fire:true`. An off-center press sets `aimX`/`aimY` from the button's center before the first firing input is sent or simulated. Dragging updates that direction relative to the same center while keeping `fire:true`, including when the joystick supplies movement. The center dead zone retains the current aim. Release or cancellation clears Fire without creating another press edge. Touching near the tank remains a separate aim-only gesture. The same controls apply in the quick tour.
 
 The touch joystick sends `touchAim:true` with its direction. Its turn cap eases from 5.8 to 9 radians per second before speed boosts as stick deflection rises from 35% to full and the angle to the desired heading rises from 15° to 90°. Small adjustments retain the standard turn rate. The same curve runs in fixed mazes and Infinity. Keyboard steering, mouse aiming, and bot steering use their existing rates.
 

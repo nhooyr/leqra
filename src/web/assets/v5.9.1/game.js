@@ -20,7 +20,7 @@
       "This browser cannot create a 2D canvas. Please open the game in another browser."
     return
   }
-  const GAME_VERSION = "v5.9.0"
+  const GAME_VERSION = "v5.9.1"
   const GAME_PROTOCOL = 1
   const TAU = Math.PI * 2,
     CELL = 84,
@@ -14110,7 +14110,7 @@
             .join(" ")
     const help =
       device === "touch"
-        ? "Drag the stick to move and aim. Touch near the tank to aim in place. Tap Fire to shoot, or hold it to fire continuously. Drag Fire to aim while firing, even while driving with the joystick."
+        ? "Drag the stick to move and aim. Touch near the tank to aim in place. Tap Fire to shoot, or hold it to fire continuously. Press off-center or drag Fire to aim while firing, even while driving with the joystick."
         : ""
     return (
       '<span class="control-player">' +
@@ -14134,7 +14134,7 @@
       paired = !aliases && !!(infinity?.twoPilots || hasLocalP2())
     const fireTip = '<p class="manual-fire-tip">Hold any fire key to rapid fire.</p>'
     let html =
-      '<div class="manual-line manual-touch"><span>Touch</span><span>Drag the joystick to drive and aim. Touch near the tank to aim in place. Tap Fire to shoot, or hold it to fire continuously. Drag Fire to aim while firing, even while driving with the joystick.</span></div>'
+      '<div class="manual-line manual-touch"><span>Touch</span><span>Drag the joystick to drive and aim. Touch near the tank to aim in place. Tap Fire to shoot, or hold it to fire continuously. Press off-center or drag Fire to aim while firing, even while driving with the joystick.</span></div>'
     html += "<p>Connect a game controller to play.</p>"
     html += '<div class="manual-controls">' + pilotControlHint(0, "mouse", aliases, !aliases)
     if (paired) html += pilotControlHint(1, "", false, true)
@@ -16792,15 +16792,29 @@
       if (element === fireButton && (e.pointerType === "touch" || e.pointerType === "pen")) {
         const rect = element.getBoundingClientRect()
         practiceFireDrag = {
-          x: e.clientX,
-          y: e.clientY,
+          x: rect.left + rect.width / 2,
+          y: rect.top + rect.height / 2,
           active: false,
           reach: Math.min(24, Math.max(0, Math.min(rect.width, rect.height) / 2 - 17)),
         }
+        updatePracticeFireAim(e)
       }
       if (!was) firePressed = true
       capturePointer(element, fireID)
       if (element === fireButton) fireButton.classList.add("held")
+    }
+    function updatePracticeFireAim(e) {
+      const dx = e.clientX - practiceFireDrag.x,
+        dy = e.clientY - practiceFireDrag.y,
+        direction = Net.fireAimDirection(dx, dy)
+      if (!direction) return
+      e.preventDefault()
+      practiceFireDrag.active = true
+      touchAim = null
+      fireAim = Math.atan2(direction.y, direction.x)
+      const offset = Net.fireAimOffset(dx, dy, practiceFireDrag.reach)
+      fireButton.style.setProperty("--fire-aim-x", offset.x + "px")
+      fireButton.style.setProperty("--fire-aim-y", offset.y + "px")
     }
     fireButton.addEventListener("pointerdown", (e) => {
       if (interactive() && usesTouch() && e.button === 0) beginPracticeFire(e, fireButton)
@@ -16837,20 +16851,7 @@
     window.addEventListener("pointermove", (e) => {
       if (!interactive()) return
       if (practiceFireDrag && e.pointerId === fireID) {
-        const direction = Net.fireAimDirection(e.clientX - practiceFireDrag.x, e.clientY - practiceFireDrag.y)
-        if (direction) {
-          e.preventDefault()
-          practiceFireDrag.active = true
-          touchAim = null
-          fireAim = Math.atan2(direction.y, direction.x)
-          const offset = Net.fireAimOffset(
-            e.clientX - practiceFireDrag.x,
-            e.clientY - practiceFireDrag.y,
-            practiceFireDrag.reach,
-          )
-          fireButton.style.setProperty("--fire-aim-x", offset.x + "px")
-          fireButton.style.setProperty("--fire-aim-y", offset.y + "px")
-        }
+        updatePracticeFireAim(e)
       }
       if (e.pointerId === stickID) {
         e.preventDefault()
@@ -17626,11 +17627,12 @@
       const rect = element.getBoundingClientRect()
       Object.assign(fireDrag, {
         id: e.pointerId,
-        x: e.clientX,
-        y: e.clientY,
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
         active: false,
         reach: Math.min(24, Math.max(0, Math.min(rect.width, rect.height) / 2 - 17)),
       })
+      updatePointerFireAim(e)
     }
     firePointers.add(e.pointerId)
     if (e.pointerType === "mouse") (mouseAim.firePointers ??= new Set()).add(e.pointerId)
@@ -17642,6 +17644,22 @@
     if (!secondary) $("fireBtn").classList.add("held")
     if (!was && mode === "online") sendOnlineInput(true)
   }
+  function updatePointerFireAim(e) {
+    const dx = e.clientX - fireDrag.x,
+      dy = e.clientY - fireDrag.y,
+      direction = Net.fireAimDirection(dx, dy)
+    if (!direction) return false
+    e.preventDefault()
+    fireDrag.active = true
+    directAim.active = true
+    directAim.independent = true
+    directAim.id = null
+    directAim.angle = Math.atan2(direction.y, direction.x)
+    const offset = Net.fireAimOffset(dx, dy, fireDrag.reach)
+    $("fireBtn").style.setProperty("--fire-aim-x", offset.x + "px")
+    $("fireBtn").style.setProperty("--fire-aim-y", offset.y + "px")
+    return true
+  }
   $("fireBtn").addEventListener("pointerdown", (e) => {
     if (e.button === 0) beginPointerFire(e, $("fireBtn"))
   })
@@ -17649,17 +17667,7 @@
     "pointermove",
     (e) => {
       if (e.pointerId !== fireDrag.id || phase !== "playing") return
-      const direction = Net.fireAimDirection(e.clientX - fireDrag.x, e.clientY - fireDrag.y)
-      if (!direction) return
-      e.preventDefault()
-      fireDrag.active = true
-      directAim.active = true
-      directAim.independent = true
-      directAim.id = null
-      directAim.angle = Math.atan2(direction.y, direction.x)
-      const offset = Net.fireAimOffset(e.clientX - fireDrag.x, e.clientY - fireDrag.y, fireDrag.reach)
-      $("fireBtn").style.setProperty("--fire-aim-x", offset.x + "px")
-      $("fireBtn").style.setProperty("--fire-aim-y", offset.y + "px")
+      if (!updatePointerFireAim(e)) return
       if (mode === "online") sendOnlineInput(true)
     },
     true,

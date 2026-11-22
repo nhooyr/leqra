@@ -22,6 +22,74 @@ class RenderBehaviorTest {
     }
 
     @Test
+    fun firePressAimsBeforeTheFirstProjectileInBothLayouts() {
+        main {
+            for (fixed in listOf(false, true)) {
+                for ((width, height) in listOf(1000 to 1600, 1600 to 1000)) {
+                    for ((dx, dy) in listOf(32f to 0f, -32f to 0f, 0f to -32f, 0f to 32f)) {
+                        val world = if (fixed) ArenaWorld(840.0, 840.0) else null
+                        val arena = PracticeArena(42, "Pilot", 0, 0, world = world)
+                        arena.configure(
+                            RoomRules(
+                                infinity = !fixed,
+                                infinityRandomBots = false,
+                                pickupRate = "off",
+                            ),
+                        )
+                        arena.snapshot.tanks.first().apply {
+                            angle = .71
+                            spawnProtected = false
+                            invulnerable = 0.0
+                        }
+                        arena.snapshot.world = world
+                        val view = NativeArenaView(instrumentation.targetContext)
+                        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                        try {
+                            view.layout(0, 0, width, height)
+                            view.submit(arena.snapshot, arena.localID, arena.maze)
+                            view.draw(Canvas(bitmap))
+                            val density = view.resources.displayMetrics.density
+                            fun coordinate(name: String) =
+                                NativeArenaView::class.java.getDeclaredField(name).run {
+                                    isAccessible = true
+                                    getFloat(view)
+                                }
+                            var received: GameInput? = null
+                            view.onInput = { received = it }
+                            val now = SystemClock.uptimeMillis()
+                            val event =
+                                MotionEvent.obtain(
+                                    now,
+                                    now,
+                                    MotionEvent.ACTION_DOWN,
+                                    (coordinate("fireX") + dx) * density,
+                                    (coordinate("fireY") + dy) * density,
+                                    0,
+                                )
+                            try {
+                                assertTrue(view.onTouchEvent(event))
+                            } finally {
+                                event.recycle()
+                            }
+                            val input = requireNotNull(received)
+                            assertTrue("The first input already fires", input.fire)
+                            assertEquals((dx / 32).toDouble(), input.aimX, 1e-6)
+                            assertEquals((dy / 32).toDouble(), input.aimY, 1e-6)
+                            arena.step(input, 1.0 / 60)
+                            val shot = arena.snapshot.bullets.single()
+                            assertEquals(input.aimX * 282, shot.vx, 1e-6)
+                            assertEquals(input.aimY * 282, shot.vy, 1e-6)
+                        } finally {
+                            bitmap.recycle()
+                            view.release()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     fun unlabelledControlsFitBothLayoutsAndLargeText() {
         main {
             val base = instrumentation.targetContext
@@ -79,7 +147,7 @@ class RenderBehaviorTest {
     }
 
     @Test
-    fun pairedPortraitArenaReservesTheLoadoutGapAboveP2() {
+    fun pairedPortraitArenaUsesBothPanesWithoutALoadoutGap() {
         main {
             val view = NativeArenaView(instrumentation.targetContext)
             val image = Bitmap.createBitmap(1000, 1600, Bitmap.Config.ARGB_8888)
@@ -87,7 +155,6 @@ class RenderBehaviorTest {
                 view.layout(0, 0, 1000, 1600)
                 val density = view.resources.displayMetrics.density
                 val middle = image.height / density / 2
-                view.pairedHudHeightDp = 60f
                 view.submit(
                     ArenaSnapshot(
                         tanks =
@@ -104,9 +171,9 @@ class RenderBehaviorTest {
                 fun field(name: String) =
                     NativeArenaView::class.java.getDeclaredField(name).apply { isAccessible = true }
                 val controls = field("controlViewport").get(view) as android.graphics.RectF
-                assertEquals(middle - 30f, controls.bottom, .01f)
+                assertEquals(middle, controls.bottom, .01f)
                 val mouseTankY = field("mouseTankY").getFloat(view)
-                assertEquals((middle + 30f + image.height / density) / 2, mouseTankY, .01f)
+                assertEquals((middle + image.height / density) / 2, mouseTankY, .01f)
             } finally {
                 image.recycle()
                 view.release()
@@ -1013,7 +1080,6 @@ class RenderBehaviorTest {
             try {
                 view.layout(0, 0, 1000, 1600)
                 view.controlsLayout = true
-                view.overlayHudHeightDp = 97f
                 val world = ArenaWorld(336.0, 336.0, 4, 4)
                 view.submit(
                     ArenaSnapshot(

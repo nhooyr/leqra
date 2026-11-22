@@ -203,6 +203,7 @@ struct PilotLoadoutView: View {
     var compact = false
     var seat = 0
     var paired = false
+    var topBorder = true
     var showcase: ShowcaseScene?
     private var showcasePilot: ArenaTank? {
         showcase.flatMap { frame in frame.snapshot.tanks.first { $0.id == frame.localID } }
@@ -247,7 +248,7 @@ struct PilotLoadoutView: View {
         }.padding(.horizontal, 13).padding(.vertical, compact ? 5 : 8)
             .frame(maxWidth: .infinity, minHeight: paired ? 75 : compact ? 54 : 97, alignment: .leading)
             .background(WebStyle.surface).overlay(alignment: .top) {
-                WebStyle.border.frame(height: 1).allowsHitTesting(false)
+                if topBorder { WebStyle.border.frame(height: 1).allowsHitTesting(false) }
             }
     }
     private var identity: some View {
@@ -320,18 +321,18 @@ struct LocalPilotLoadouts: View {
         if session.secondaryLocalID != nil {
             if landscape {
                 HStack(alignment: .top, spacing: 0) {
-                    PilotLoadoutView(session: session, compact: true, paired: true)
+                    PilotLoadoutView(session: session, compact: true, paired: true, topBorder: false)
                     WebStyle.border.frame(width: 1)
-                    PilotLoadoutView(session: session, compact: true, seat: 1, paired: true)
+                    PilotLoadoutView(session: session, compact: true, seat: 1, paired: true, topBorder: false)
                 }.fixedSize(horizontal: false, vertical: true)
             } else {
                 VStack(spacing: 0) {
-                    PilotLoadoutView(session: session, compact: true)
+                    PilotLoadoutView(session: session, compact: true, topBorder: false)
                     PilotLoadoutView(session: session, compact: true, seat: 1)
                 }
             }
         } else {
-            PilotLoadoutView(session: session, compact: landscape)
+            PilotLoadoutView(session: session, compact: landscape, topBorder: false)
         }
     }
 }

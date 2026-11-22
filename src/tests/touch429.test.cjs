@@ -279,11 +279,11 @@ test("joystick plus Fire keep independent pointers through a prevented pinch and
 test("Fire drag retains turret aim when released while the joystick stays independent", () => {
   const b = boot()
   b.setPhase("playing")
-  const start = { pointerId: 11, pointerType: "touch", clientX: 300, clientY: 500 }
+  const start = { pointerId: 11, pointerType: "touch", clientX: 48, clientY: 48 }
   b.$("fireBtn").emit("pointerdown", start)
-  b.window.emit("pointermove", { ...start, clientX: 307 })
+  b.window.emit("pointermove", { ...start, clientX: 55 })
   assert.equal(b.s.directAim.active, false)
-  b.window.emit("pointermove", { ...start, clientY: 460 })
+  b.window.emit("pointermove", { ...start, clientY: 8 })
   assert.equal(b.s.directAim.angle, -Math.PI / 2)
   assert.equal(b.$("fireBtn").style["--fire-aim-y"], "-24px")
   assert.equal(b.s.firePointers.has(11), true)
@@ -299,7 +299,7 @@ test("Fire drag retains turret aim when released while the joystick stays indepe
   assert.equal(b.s.directAim.angle, -Math.PI / 2)
   b.$("fireBtn").emit("pointerdown", start)
   assert.equal(b.s.directAim.angle, -Math.PI / 2, "pressing Fire must retain independent turret aim")
-  b.window.emit("pointermove", { ...start, clientY: 460 })
+  b.window.emit("pointermove", { ...start, clientY: 8 })
   b.window.emit("pointermove", { pointerId: 12, clientX: 60, clientY: 48 })
   assert.equal(b.s.directAim.active, true)
   assert.equal(b.s.stick.assisted, true)
@@ -332,6 +332,39 @@ test("center Fire presses shoot immediately and keep firing while aiming until r
   b.window.emit("pointercancel", start)
   assert.equal(b.s.primaryFireHeld(), false)
   assert.equal(b.s.firePresses.size, 0)
+})
+
+test("Fire applies the press position before its first local or online fire edge", () => {
+  for (const mode of ["room", "online"])
+    for (const [dx, dy] of [
+      [32, 0],
+      [-32, 0],
+      [0, -32],
+      [0, 32],
+      [24, -24],
+    ]) {
+      const b = boot()
+      b.s.mode = mode
+      b.setPhase("playing")
+      b.s.directAim.angle = 0.71
+      const sent = []
+      b.s.sendOnlineInput = () => sent.push({ fire: b.s.primaryFireHeld(), angle: b.s.directAim.angle })
+      b.$("fireBtn").emit("pointerdown", {
+        pointerId: 12,
+        pointerType: "touch",
+        clientX: 48 + dx,
+        clientY: 48 + dy,
+      })
+      const angle = Math.atan2(dy, dx)
+      assert.equal(b.s.directAim.angle, angle)
+      assert.equal(b.s.directAim.independent, true)
+      assert.equal(b.s.primaryFireHeld(), true)
+      assert.equal(b.s.firePresses.size, 1)
+      if (mode === "online") assert.deepEqual(sent, [{ fire: true, angle }])
+      b.window.emit("pointermove", { pointerId: 12, clientX: 48, clientY: 16 })
+      assert.equal(b.s.directAim.angle, -Math.PI / 2, "dragging stays relative to the button center")
+      assert.equal(b.s.firePresses.size, 1, "aiming must not create another fire edge")
+    }
 })
 
 test("Infinity keeps the active touch policy until the arena closes", () => {

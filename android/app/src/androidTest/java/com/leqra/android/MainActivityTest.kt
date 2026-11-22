@@ -253,7 +253,7 @@ class MainActivityTest {
             val instructions =
                 listOf(
                     "Drag the left stick to drive. Touch near your tank to aim without moving.",
-                    "Tap Fire to shoot, or hold it to fire continuously. Drag Fire to aim while firing, even while driving with the joystick.",
+                    "Tap Fire to shoot, or hold it to fire continuously. Press off-center or drag Fire to aim while firing, even while driving with the joystick.",
                     "Destroy the stationary tank to score a point.",
                 )
             fun point(name: String): Float =
@@ -1024,7 +1024,7 @@ class MainActivityTest {
                 session.selectMode("elimination")
                 invoke("showControls")
                 assertFalse(text().contains("Power-ups can stack"))
-                assertTrue(text().contains("Drag Fire to aim while firing"))
+                assertTrue(text().contains("Press off-center or drag Fire to aim while firing"))
                 invoke("dismissDialog")
                 invoke("showRules")
                 panelViews()
@@ -1575,6 +1575,7 @@ class MainActivityTest {
                         header.height < 100 * activity.resources.displayMetrics.density,
                     )
                     assertTrue("$mode simulation advances", session.snapshot.tick > 10)
+                    assertStatusAboveArena(activity)
                     assertEquals(2, session.localID2)
                     assertTrue(session.snapshot.tanks.any { it.id == session.localID2 && !it.bot })
                     assertTrue(session.snapshot.tanks.all { it.x.isFinite() && it.y.isFinite() })
@@ -1595,6 +1596,7 @@ class MainActivityTest {
                 screenshot("$mode-landscape")
                 main {
                     assertEquals(Screen.PLAYING, session.screen)
+                    assertStatusAboveArena(activity)
                     assertTrue(activity.window.decorView.width > activity.window.decorView.height)
                     assertNotNull(activity.findViewById<View>(android.R.id.content))
                     activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
@@ -2386,6 +2388,21 @@ class MainActivityTest {
         }
     }
 
+    private fun assertStatusAboveArena(activity: MainActivity) {
+        fun view(name: String) =
+            MainActivity::class.java.getDeclaredField(name).run {
+                isAccessible = true
+                get(activity) as View
+            }
+        val header = view("header")
+        val loadout = view("loadout")
+        val stage = view("stage")
+        assertSame("Status and arena share the top-level layout", stage.parent, loadout.parent)
+        assertTrue("Status is visible", loadout.visibility == View.VISIBLE && loadout.height > 0)
+        assertTrue("Status sits below the header", loadout.top >= header.bottom)
+        assertTrue("Status stays above the arena and touch controls", loadout.bottom <= stage.top)
+    }
+
     @Test
     fun fireDragAimsInPlaceInBothLayouts() {
         for (mode in listOf("infinity", "elimination")) {
@@ -2401,6 +2418,7 @@ class MainActivityTest {
                 awaitPlaying(activity)
                 SystemClock.sleep(250)
                 main {
+                    assertStatusAboveArena(activity)
                     val session = state(activity)
                     val view =
                         MainActivity::class.java.getDeclaredField("arena").run {
@@ -2515,6 +2533,13 @@ class MainActivityTest {
                     assertEquals(0.0, session.input.stickY, .001)
                     touch(MotionEvent.ACTION_DOWN, 32f)
                     assertTrue(session.input.fire)
+                    assertEquals(
+                        "The first firing input already aims right",
+                        1.0,
+                        session.input.aimX,
+                        .001,
+                    )
+                    assertEquals(0.0, session.input.aimY, .001)
                     touch(MotionEvent.ACTION_MOVE, 32f, -32f)
                     assertTrue(session.input.fire)
                     assertFalse(session.input.snapAim)

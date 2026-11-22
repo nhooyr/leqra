@@ -476,6 +476,7 @@ final class GameUITests: XCTestCase {
                 XCUIDevice.shared.orientation = landscape ? .landscapeLeft : .portrait
                 waitForOrientation(app, landscape: landscape)
                 XCTAssertTrue(p2.exists)
+                assertStatusAboveArena(in: app)
                 XCTAssertTrue(app.staticTexts["pilotIdentity"].exists)
                 XCTAssertTrue(app.frame.contains(p2.frame))
                 if mode == "infinity" {
@@ -691,7 +692,7 @@ final class GameUITests: XCTestCase {
             if page == 1 {
                 XCTAssertEqual(
                     instructions.label,
-                    "Tap Fire to shoot, or hold it to fire continuously. Drag Fire to aim while firing, even while driving with the joystick."
+                    "Tap Fire to shoot, or hold it to fire continuously. Press off-center or drag Fire to aim while firing, even while driving with the joystick."
                 )
             }
             if page == 2 {
@@ -1190,6 +1191,7 @@ final class GameUITests: XCTestCase {
                 XCUIDevice.shared.orientation = landscape ? .landscapeLeft : .portrait
                 waitForOrientation(app, landscape: landscape)
                 let stage = arena(in: app)
+                assertStatusAboveArena(in: app)
                 let values = Dictionary(
                     uniqueKeysWithValues: ((stage.value as? String) ?? "").split(separator: ",").compactMap {
                         item -> (String, Double)? in
@@ -1261,6 +1263,49 @@ final class GameUITests: XCTestCase {
                 XCTAssertEqual(try XCTUnwrap(after["y"]), try XCTUnwrap(before["y"]), accuracy: 0.0001)
             }
             capture(app, name: "Direct aim touches " + (fixed ? "fixed" : "Infinity"))
+            app.terminate()
+        }
+    }
+
+    @MainActor
+    func testFirePressAimsBeforeTheFirstProjectileInBothLayouts() throws {
+        for fixed in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = [
+                "--probe-direct-aim", "--public-session-test-namespace", "fire-press-" + UUID().uuidString,
+            ]
+            if fixed { app.launchArguments.append("--probe-fixed") }
+            XCUIDevice.shared.orientation = .portrait
+            app.launch()
+            XCTAssertTrue(app.buttons["pauseGame"].waitForExistence(timeout: 15))
+            for landscape in [false, true] {
+                XCUIDevice.shared.orientation = landscape ? .landscapeLeft : .portrait
+                waitForOrientation(app, landscape: landscape)
+                let stage = arena(in: app)
+                let before = p2InputState(stage)
+                let direction = landscape ? Double.pi : -Double.pi / 2
+                let point = app.coordinate(withNormalizedOffset: .zero).withOffset(
+                    CGVector(
+                        dx: stage.frame.minX + (before["fireX"] ?? 0) + cos(direction) * 32,
+                        dy: stage.frame.maxY - (before["fireY"] ?? 0) + sin(direction) * 32))
+                point.press(forDuration: 0.06)
+                let fired = XCTNSPredicateExpectation(
+                    predicate: NSPredicate { _, _ in
+                        (self.p2InputState(stage)["shotID"] ?? 0) > (before["shotID"] ?? 0)
+                    }, object: stage)
+                XCTAssertEqual(XCTWaiter.wait(for: [fired], timeout: 5), .completed)
+                let after = p2InputState(stage)
+                let angle = try XCTUnwrap(after["angle"])
+                XCTAssertGreaterThan(cos(angle - direction), 0.999)
+                XCTAssertEqual(abs(try XCTUnwrap(after["shotVX"])), abs(cos(angle) * 282), accuracy: 0.01)
+                XCTAssertEqual(abs(try XCTUnwrap(after["shotVY"])), abs(sin(angle) * 282), accuracy: 0.01)
+                XCTAssertEqual(try XCTUnwrap(after["x"]), try XCTUnwrap(before["x"]), accuracy: 0.0001)
+                XCTAssertEqual(try XCTUnwrap(after["y"]), try XCTUnwrap(before["y"]), accuracy: 0.0001)
+                capture(
+                    app,
+                    name: "First Fire press " + (fixed ? "fixed " : "Infinity ")
+                        + (landscape ? "landscape" : "portrait"))
+            }
             app.terminate()
         }
     }
@@ -2760,15 +2805,35 @@ final class GameUITests: XCTestCase {
     }
 
     @MainActor
+    private func assertStatusAboveArena(in app: XCUIApplication) {
+        let stage = arena(in: app)
+        let header = app.buttons["pauseGame"]
+        XCTAssertTrue(app.staticTexts["pilotIdentity"].waitForExistence(timeout: 5))
+        for suffix in ["", "P2"] {
+            let identity = app.staticTexts["pilotIdentity" + suffix]
+            guard identity.exists else { continue }
+            XCTAssertGreaterThanOrEqual(identity.frame.minY, header.frame.maxY)
+            for id in ["pilotIdentity", "pilotAmmo", "pilotReadiness"] {
+                let element = app.descendants(matching: .any)[id + suffix].firstMatch
+                XCTAssertTrue(element.exists)
+                XCTAssertLessThanOrEqual(
+                    element.frame.maxY, stage.frame.minY + 1,
+                    "Pilot status must stay above the arena and touch controls")
+                XCTAssertTrue(app.frame.contains(element.frame))
+            }
+        }
+    }
+
+    @MainActor
     private func setSwitch(_ element: XCUIElement, to value: String) {
         let descendant = element.switches.firstMatch
         let control = descendant.exists ? descendant : element
         print("Toggling native switch from \(element.value ?? "nil") to \(value), frame \(control.frame)")
-        control.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        control.tap()
         let changed = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "value == %@", value), object: element)
         XCTAssertEqual(
             XCTWaiter.wait(for: [changed], timeout: 5), .completed,
-            "The switch must change after tapping its native thumb; actual value: \(element.value ?? "nil")")
+            "The switch must change after tapping it; actual value: \(element.value ?? "nil")")
     }
 }

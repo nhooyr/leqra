@@ -86,7 +86,6 @@ class MainActivity : Activity() {
     private lateinit var objectiveLine: NativeObjectiveView
     private lateinit var roundAnnouncement: NativeRoundAnnouncement
     private lateinit var loadout: NativeHudView
-    private lateinit var primaryPairedLoadout: NativeHudView
     private var readyScroll: ScrollView? = null
     private var connecting: LinearLayout? = null
     private var connectingStatus: TextView? = null
@@ -378,11 +377,7 @@ class MainActivity : Activity() {
                 keyboardInput()
             session.frame(nanos)
             if (::loadout.isInitialized && session.screen == Screen.PLAYING) {
-                val progress = loadout.advance(nanos)
-                arena.fireProgress =
-                    if (primaryPairedLoadout.visibility == View.VISIBLE)
-                        primaryPairedLoadout.advance(nanos)
-                    else progress
+                arena.fireProgress = loadout.advance(nanos)
             }
             if (fpsStarted == 0L) fpsStarted = nanos
             frameCount++
@@ -418,22 +413,10 @@ class MainActivity : Activity() {
             )
         }
         loadout = NativeHudView(this)
-        loadout.onHeightChanged = { height ->
-            if (loadout.parent === stage) {
-                arena.overlayHudHeightDp = height
-                updateRoundAnnouncementInsets(embedded = true)
-            }
-        }
-        root.add(loadout, gap = 0)
-        primaryPairedLoadout =
-            NativeHudView(this).apply {
-                visibility = View.GONE
-                compact = true
-                onHeightChanged = { height -> arena.pairedHudHeightDp = height }
-            }
-        stage.addView(
-            primaryPairedLoadout,
-            FrameLayout.LayoutParams(-1, -2, Gravity.CENTER_VERTICAL),
+        root.addView(
+            loadout,
+            root.indexOfChild(stage),
+            LinearLayout.LayoutParams(-1, -2),
         )
         root.setOnApplyWindowInsetsListener { _, insets ->
             val safe = insets.immersiveInsets()
@@ -541,7 +524,6 @@ class MainActivity : Activity() {
                     phase = session.snapshot.phase,
                     result = session.snapshot.result,
                 )
-            val splitLoadout = primaryPairedLoadout.visibility == View.VISIBLE
             loadout.update(
                 state,
                 session.localID,
@@ -549,21 +531,9 @@ class MainActivity : Activity() {
                 session.infinity,
                 session.paused,
                 session.online,
-                onlySeat = if (splitLoadout) 1 else null,
             )
-            if (splitLoadout)
-                primaryPairedLoadout.update(
-                    state,
-                    session.localID,
-                    session.localID2,
-                    session.infinity,
-                    session.paused,
-                    session.online,
-                    onlySeat = 0,
-                )
-            val fireLoadout = if (splitLoadout) primaryPairedLoadout else loadout
-            arena.fireLabel = fireLoadout.fireLabel
-            arena.fireAvailable = fireLoadout.fireAvailable
+            arena.fireLabel = loadout.fireLabel
+            arena.fireAvailable = loadout.fireAvailable
             val ended = session.snapshot.phase == "matchOver" || session.snapshot.result != null
             if (!ended) lastResultKey = null
             else {
@@ -633,60 +603,24 @@ class MainActivity : Activity() {
     private fun configureLoadoutLayout() {
         if (!::loadout.isInitialized) return
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-        val embedded = session.screen == Screen.PLAYING && !session.infinity && !landscape
-        val splitLoadout =
-            session.screen == Screen.PLAYING &&
-                session.infinity &&
-                session.localID2 != null &&
-                !session.spectating &&
-                !landscape
-        val key = "$embedded:$landscape:$splitLoadout:$safeLeft:$safeRight:$safeBottom"
+        val fixedPortrait = session.screen == Screen.PLAYING && !session.infinity && !landscape
+        val paired = session.localID2 != null
+        val key = "$fixedPortrait:$landscape:$paired:$safeLeft:$safeRight:$safeBottom"
         if (key == loadoutLayoutKey) return
         loadoutLayoutKey = key
-        loadout.compact = landscape || splitLoadout
-        primaryPairedLoadout.visibility = if (splitLoadout) View.VISIBLE else View.GONE
-        primaryPairedLoadout.safeLeft = safeLeft
-        primaryPairedLoadout.safeRight = safeRight
-        arena.pairedHudHeightDp =
-            if (splitLoadout) primaryPairedLoadout.height / resources.displayMetrics.density else 0f
-        primaryPairedLoadout.requestLayout()
-        primaryPairedLoadout.invalidate()
+        loadout.compact = landscape || paired
+        loadout.stacked = paired && !landscape
         loadout.safeLeft = safeLeft
         loadout.safeRight = safeRight
-        loadout.safeBottom = if (embedded) 0 else safeBottom
-        val parent = if (embedded) stage else root
-        if (loadout.parent !== parent) {
-            (loadout.parent as? ViewGroup)?.removeView(loadout)
-            if (embedded)
-                stage.addView(
-                    loadout,
-                    FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply {
-                        bottomMargin = dp(119) + safeBottom
-                    },
-                )
-            else root.add(loadout, gap = 0)
-        } else if (embedded) {
-            (loadout.layoutParams as FrameLayout.LayoutParams).apply {
-                bottomMargin = dp(119) + safeBottom
-                loadout.layoutParams = this
-            }
-        }
-        arena.overlayHudHeightDp =
-            if (embedded)
-                (loadout.measuredHeight.takeIf { it > 0 }?.div(resources.displayMetrics.density)
-                    ?: 97f)
-            else 0f
-        arena.safeInsets(safeLeft, 0, safeRight, if (embedded) safeBottom else 0)
-        updateRoundAnnouncementInsets(embedded)
+        loadout.safeBottom = 0
+        arena.safeInsets(safeLeft, 0, safeRight, safeBottom)
+        updateRoundAnnouncementInsets(fixedPortrait)
         loadout.requestLayout()
         loadout.invalidate()
     }
 
-    private fun updateRoundAnnouncementInsets(embedded: Boolean) {
-        val reserved =
-            if (embedded && !session.spectating)
-                dp(119 + arena.overlayHudHeightDp.roundToInt()) + safeBottom
-            else 0
+    private fun updateRoundAnnouncementInsets(fixedPortrait: Boolean) {
+        val reserved = if (fixedPortrait && !session.spectating) dp(119) + safeBottom else 0
         roundAnnouncement.setSafeArea(safeLeft, safeRight, reserved)
     }
 
@@ -1875,7 +1809,7 @@ class MainActivity : Activity() {
         panel.add(
             label(
                 this,
-                "Drag the left stick to drive and aim. Touch near your tank to rotate toward that point without moving. Tap Fire to shoot, or hold it to fire continuously. Drag Fire to aim while firing, even while driving with the joystick. Pickups equip automatically.",
+                "Drag the left stick to drive and aim. Touch near your tank to rotate toward that point without moving. Tap Fire to shoot, or hold it to fire continuously. Press off-center or drag Fire to aim while firing, even while driving with the joystick. Pickups equip automatically.",
                 13f,
             ),
         )
@@ -3383,7 +3317,7 @@ class MainActivity : Activity() {
         panel.add(
             label(
                 this,
-                "Drag the joystick to drive and aim. Touch near the tank to aim in place. Tap Fire to shoot, or hold it to fire continuously. Drag Fire to aim while firing, even while driving with the joystick.",
+                "Drag the joystick to drive and aim. Touch near the tank to aim in place. Tap Fire to shoot, or hold it to fire continuously. Press off-center or drag Fire to aim while firing, even while driving with the joystick.",
                 12f,
                 soft,
             ),

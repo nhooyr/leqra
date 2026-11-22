@@ -3993,27 +3993,35 @@
     if (event.pointerType === "touch" || event.pointerType === "pen") {
       const rect = fire.getBoundingClientRect()
       fireDrag = {
-        x: event.clientX,
-        y: event.clientY,
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
         active: false,
         reach: Math.min(24, Math.max(0, Math.min(rect.width, rect.height) / 2 - 17)),
       }
+      updateFireAim(event)
     }
     fire.classList.add("held")
     if (session && !padFireHeld(session)) pressFire(event)
   })
+  function updateFireAim(event) {
+    if (!session || pauseMenu.open) return false
+    const dx = event.clientX - fireDrag.x,
+      dy = event.clientY - fireDrag.y,
+      direction = net.fireAimDirection(dx, dy)
+    if (!direction) return false
+    event.preventDefault()
+    fireDrag.active = true
+    Object.assign(directAim, direction, { active: true, id: null, independent: true })
+    const offset = net.fireAimOffset(dx, dy, fireDrag.reach)
+    fire.style.setProperty("--fire-aim-x", offset.x + "px")
+    fire.style.setProperty("--fire-aim-y", offset.y + "px")
+    return true
+  }
   window.addEventListener(
     "pointermove",
     (event) => {
       if (!fireDrag || event.pointerId !== firePointer || !session || pauseMenu.open) return
-      const direction = net.fireAimDirection(event.clientX - fireDrag.x, event.clientY - fireDrag.y)
-      if (!direction) return
-      event.preventDefault()
-      fireDrag.active = true
-      Object.assign(directAim, direction, { active: true, id: null, independent: true })
-      const offset = net.fireAimOffset(event.clientX - fireDrag.x, event.clientY - fireDrag.y, fireDrag.reach)
-      fire.style.setProperty("--fire-aim-x", offset.x + "px")
-      fire.style.setProperty("--fire-aim-y", offset.y + "px")
+      if (!updateFireAim(event)) return
       sendInput(session, performance.now(), true)
     },
     true,

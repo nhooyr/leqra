@@ -4,7 +4,7 @@
 
 - **Primary tank (P1)** uses W/S to drive forward and back, A/D to steer, and Q/C to fire.
 - **Second local tank (P2)** uses the arrow keys and Space/Enter. These keys also control the primary tank when the second tank is inactive.
-- **Touch** uses the joystick to drive and steer. Tap Fire to shoot, or hold it to fire continuously. Drag Fire to aim the turret while firing, even while driving in another direction; the crosshair follows your aim. Release or cancel the touch to stop firing. Push the stick further for a faster wide turn. Touch near your tank to aim without moving or firing. Press Fire again to detonate an active grenade.
+- **Touch** uses the joystick to drive and steer. Tap Fire to shoot, or hold it to fire continuously. Press away from Fire's center to aim the first shot in that direction, then drag around its center to aim the turret while firing, even while driving in another direction; the crosshair follows your aim. Press the center to keep the current aim. Release or cancel the touch to stop firing. Push the stick further for a faster wide turn. Touch near your tank to aim without moving or firing. Press Fire again to detonate an active grenade.
 - **P or Esc** opens the in-game menu. **M** toggles sound and **F** toggles fullscreen.
 - **Mouse** aims the primary tank; left-click or hold to fire. A/D switch back to keyboard aiming until the pointer moves again. Mouse Aim and Mouse Fire have separate checkboxes in Controls.
 
@@ -13,6 +13,9 @@ with P1, and a connected keyboard/mouse controls P2. Both keyboard layouts above
 control P2 in this setup. Each pilot has a separate callsign, color, score, and
 loadout. Infinity uses two camera views, side by side in landscape or stacked in
 portrait; fixed mazes share one view.
+
+On mobile, each pilot's ammunition, weapon, and readiness status sits below the
+top header, above the playfield, so your thumbs do not cover it while playing.
 
 Open **Controls**, below **Players and bots**, to remap keys, toggle mouse controls, adjust audio, or replay the quick tour. Callsign fields are above the settings sections and are also available in pause menus, including Infinity.
 

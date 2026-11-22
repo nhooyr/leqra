@@ -201,6 +201,26 @@ const server = http.createServer((req, res) => {
                 loadoutTop: document
                   .querySelector(arena === "fixed" ? ".underbar" : ".infinite-underbar")
                   .getBoundingClientRect().top,
+                loadoutBottom: document
+                  .querySelector(arena === "fixed" ? ".underbar" : ".infinite-underbar")
+                  .getBoundingClientRect().bottom,
+                statusBorder: (() => {
+                  const panel = document.querySelector(arena === "fixed" ? ".underbar" : ".infinite-underbar")
+                  const style = getComputedStyle(panel)
+                  const above = getComputedStyle(
+                    document.querySelector(arena === "fixed" ? ".arena-bar" : "#infiniteStatusbar"),
+                  )
+                  return {
+                    width: style.borderBottomWidth,
+                    style: style.borderBottomStyle,
+                    color: style.borderBottomColor,
+                    aboveColor: above.borderBottomColor,
+                  }
+                })(),
+                headerBottom: document.getElementById("gameHeader").getBoundingClientRect().bottom,
+                arenaTop: document
+                  .getElementById(arena === "fixed" ? "arena" : "infiniteCanvas")
+                  .getBoundingClientRect().top,
                 sidebarHint: document.querySelector(".manual-fire-tip")?.textContent,
                 hint: hint?.textContent || null,
                 center: rect(center),
@@ -228,9 +248,23 @@ const server = http.createServer((req, res) => {
             `${label}/${arena}/${name} target symbol is not centered`,
           )
           assert(value.knob.bottom <= height, `${label}/${arena}/${name} thumb is clipped`)
+          assert(
+            value.loadoutTop >= value.headerBottom - 0.5 && value.loadoutBottom <= value.arenaTop + 0.5,
+            `${label}/${arena}/${name} status must sit between the header and playfield`,
+          )
+          assert.deepEqual(
+            value.statusBorder,
+            {
+              width: "1px",
+              style: "solid",
+              color: value.statusBorder.aboveColor,
+              aboveColor: value.statusBorder.aboveColor,
+            },
+            `${label}/${arena}/${name} status needs a matching border above the maze`,
+          )
           if (value.overlaid)
             assert(
-              value.knob.bottom <= value.loadoutTop + 0.5 && value.fire.bottom + 8 <= value.loadoutTop + 0.5,
+              value.fire.y >= value.loadoutBottom && value.stick.y >= value.loadoutBottom,
               `${label}/${arena}/${name} controls overlap the loadout`,
             )
           assert(

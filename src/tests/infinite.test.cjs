@@ -653,9 +653,8 @@ test("Quick Tour requires the demonstrated action on each page and resets on rep
     assert.equal(next.disabled, true)
     if (touch) {
       const before = { ...drawn }
-      const fire = { ...pointer, pointerId: 2 }
+      const fire = { ...pointer, pointerId: 2, clientY: 16 }
       $("introTourFireButton").emit("pointerdown", fire)
-      h.window.emit("pointermove", { ...fire, clientY: 16 })
       $("introTourStick").emit("pointerdown", pointer)
       h.window.emit("pointermove", { ...pointer, clientX: 84 })
       h.advance(16)
@@ -663,7 +662,7 @@ test("Quick Tour requires the demonstrated action on each page and resets on rep
       assert.equal(drawn.y, before.y)
       assert.equal(drawn.angle, -Math.PI / 2)
       assert.equal(h.window.leqraNet.bodyHeading(drawn), 0)
-      assert(h.bulletDraws.at(-1).length > 0, "center dragging fires in the tour")
+      assert(h.bulletDraws.at(-1).length > 0, "an off-center press aims and fires in the tour")
       h.window.emit("pointerup", pointer)
       h.window.emit("pointerup", fire)
       $("introTourFireButton").emit("pointerdown", pointer)
@@ -6112,11 +6111,11 @@ test("Infinity Fire drag sends in-place aim without extra fire edges and resets 
     leaderboard: [],
     players: 1,
   })
-  const start = { pointerType: "touch", button: 0, pointerId: 31, clientX: 320, clientY: 600 }
+  const start = { pointerType: "touch", button: 0, pointerId: 31, clientX: 48, clientY: 48 }
   h.byID("infiniteFire").emit("pointerdown", start)
-  h.window.emit("pointermove", { ...start, clientX: 327 })
+  h.window.emit("pointermove", { ...start, clientX: 55 })
   assert.equal(socket.sent.at(-1).snapAim, undefined)
-  h.window.emit("pointermove", { ...start, clientX: 280 })
+  h.window.emit("pointermove", { ...start, clientX: 8 })
   let packet = socket.sent.at(-1)
   assert.equal(packet.fire, true)
   assert.equal(packet.aimX, -1)
@@ -6128,11 +6127,49 @@ test("Infinity Fire drag sends in-place aim without extra fire edges and resets 
   assert.equal(packet.fire, false)
   assert.equal(packet.aimX, -1)
   h.byID("infiniteFire").emit("pointerdown", start)
-  h.window.emit("pointermove", { ...start, clientY: 570 })
+  h.window.emit("pointermove", { ...start, clientY: 18 })
   h.window.emit("pointercancel", start)
   assert.equal(socket.sent.at(-1).snapAim, undefined)
   assert.equal(socket.sent.at(-1).fire, false)
   h.infinity.close()
+})
+
+test("Infinity includes the press direction in the first firing packet", () => {
+  for (const [dx, dy] of [
+    [32, 0],
+    [-32, 0],
+    [0, -32],
+    [0, 32],
+    [24, -24],
+  ]) {
+    const h = harness(undefined, true)
+    h.infinity.start("online")
+    const socket = h.sockets[0]
+    socket.receive({ type: "welcome", id: 1, seed: 0 })
+    socket.receive({
+      type: "state",
+      tanks: [{ id: 1, x: 42, y: 42, angle: 0.71, hp: 1 }],
+      bullets: [],
+      leaderboard: [],
+      players: 1,
+    })
+    const from = socket.sent.length
+    h.byID("infiniteFire").emit("pointerdown", {
+      pointerType: "touch",
+      button: 0,
+      pointerId: 31,
+      clientX: 48 + dx,
+      clientY: 48 + dy,
+    })
+    const packets = socket.sent.slice(from).filter((packet) => packet.type === "input")
+    assert.equal(packets.length, 1)
+    assert.equal(packets[0].fire, true)
+    assert.equal(packets[0].aimX, dx / Math.hypot(dx, dy))
+    assert.equal(packets[0].aimY, dy / Math.hypot(dx, dy))
+    assert.equal(packets[0].stickX, 0)
+    assert.equal(packets[0].stickY, 0)
+    h.infinity.close()
+  }
 })
 
 test("Infinity center Fire shoots immediately and keeps firing while dragging or driving", () => {

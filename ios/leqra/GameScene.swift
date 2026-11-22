@@ -83,7 +83,6 @@ final class GameScene: SKScene {
     private let emptyFireProbe = ProcessInfo.processInfo.arguments.contains("--probe-empty-fire-feedback")
     private(set) var layoutMode: LayoutMode = .infinity
     private var landscape = false
-    private var fixedLoadoutHeight: CGFloat = 97
     private var spectating = false
 
     private let world = SKNode()
@@ -130,7 +129,6 @@ final class GameScene: SKScene {
     private var aimTankPosition: CGPoint?
     private var stickTouch: UITouch?
     private var fireTouch: UITouch?
-    private var fireTouchOrigin = CGPoint.zero
     private var stickOrigin = CGPoint.zero
     private var fireOrigin = CGPoint.zero
     private var previousTime: TimeInterval = 0
@@ -404,17 +402,16 @@ final class GameScene: SKScene {
     }
 
     func configureLayout(
-        infinity: Bool, landscape: Bool, loadoutHeight: CGFloat, spectating: Bool = false,
+        infinity: Bool, landscape: Bool, spectating: Bool = false,
         showsTouchControls: Bool = true
     ) {
         let mode: LayoutMode = infinity ? .infinity : .fixed
         guard
-            layoutMode != mode || self.landscape != landscape || fixedLoadoutHeight != loadoutHeight
+            layoutMode != mode || self.landscape != landscape
                 || self.spectating != spectating || self.showsTouchControls != showsTouchControls
         else { return }
         layoutMode = mode
         self.landscape = landscape
-        fixedLoadoutHeight = loadoutHeight
         self.spectating = spectating
         self.showsTouchControls = showsTouchControls
         controls.isHidden = spectating || !showsTouchControls
@@ -442,7 +439,7 @@ final class GameScene: SKScene {
     private var worldViewport: CGRect {
         let reserve =
             layoutMode == .fixed && !landscape && !spectating && showsTouchControls
-            ? min(max(0, size.height - 60), 119 + fixedLoadoutHeight) : 0
+            ? min(max(0, size.height - 60), 119) : 0
         return CGRect(x: 0, y: reserve, width: max(1, size.width), height: max(1, size.height - reserve))
     }
 
@@ -1306,7 +1303,7 @@ final class GameScene: SKScene {
                 && location.y < max(210, size.height * 0.38)
             {
                 fireTouch = touch
-                fireTouchOrigin = location
+                updateFireAim(location)
                 setFireSource(.touch, down: true)
                 impact.prepare()
             }
@@ -1320,18 +1317,20 @@ final class GameScene: SKScene {
             } else if touch === stickTouch {
                 updateStick(touch.location(in: self))
             } else if touch === fireTouch {
-                let point = touch.location(in: self)
-                let dx = Double(point.x - fireTouchOrigin.x)
-                let dy = Double(fireTouchOrigin.y - point.y)
-                let distance = hypot(dx, dy)
-                if distance.isFinite && distance >= 8 {
-                    inputSources.fireAim = BeamPoint(x: dx / distance, y: dy / distance)
-                    let scale = min(1, 24 / distance)
-                    fireCrosshair.position = CGPoint(x: dx * scale, y: -dy * scale)
-                    publishInput()
-                }
+                updateFireAim(touch.location(in: self))
+                publishInput()
             }
         }
+    }
+
+    private func updateFireAim(_ point: CGPoint) {
+        let dx = Double(point.x - fireOrigin.x)
+        let dy = Double(fireOrigin.y - point.y)
+        let distance = hypot(dx, dy)
+        guard distance.isFinite, distance >= 8 else { return }
+        inputSources.fireAim = BeamPoint(x: dx / distance, y: dy / distance)
+        let scale = min(1, 24 / distance)
+        fireCrosshair.position = CGPoint(x: dx * scale, y: -dy * scale)
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) { endTouches(touches) }

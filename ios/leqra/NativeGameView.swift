@@ -330,7 +330,6 @@ struct NativeGameView: UIViewRepresentable {
     let paused: Bool
     var infinity: Bool = true
     var landscape: Bool = false
-    var loadoutHeight: CGFloat = 97
     var spectating = false
     var hardwareInputScene: GameScene? = nil
     var acceptsHardware = true
@@ -350,7 +349,7 @@ struct NativeGameView: UIViewRepresentable {
 
     private func configure(_ container: KeyboardGameContainer) {
         scene.configureLayout(
-            infinity: infinity, landscape: landscape, loadoutHeight: loadoutHeight,
+            infinity: infinity, landscape: landscape,
             spectating: spectating, showsTouchControls: showsTouchControls)
         container.configure(
             scene: scene, highFrameRate: highFrameRate, paused: paused, spectating: spectating,

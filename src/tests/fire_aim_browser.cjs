@@ -21,6 +21,7 @@ window.__fireFixed = {
  seen: new Set(),
  setup(near) {
   this.seen.clear();
+  this.firstShot=null;
   window.leqraInfinity.close(); mode='room';
   localRoom.rules=validateRoomRules({...defaultRoomRules(),infinity:false,pickupRate:'off'});
   localRoom.players=[0,1].map(id=>({id,member:id+1,kind:'human',name:id?'Observer':'Pilot',team:0,colorIndex:id}));
@@ -30,7 +31,7 @@ window.__fireFixed = {
   Object.assign(tanks[1],{x:430,y:340,invulnerable:1000,spawnProtected:false,localIndex:1});
   cacheMap(); updateHUD(true); render();
  },
- read() { const t=tanks[0], r=canvas.getBoundingClientRect();for(const b of bullets)if(b.owner===t.id)this.seen.add(b.id);return {x:t.x,y:t.y,angle:t.angle,bodyAngle:window.leqraNet.bodyHeading(t),hp:t.hp,independentAim:t.independentAim,input:typeof inputState==="function"?inputState(session):null,fired:this.seen.size,fire:primaryFireHeld(),aim:directAim.active,screenX:r.left+offsetX+t.x*scale,screenY:r.top+offsetY+t.y*scale}; }
+ read() { const t=tanks[0], r=canvas.getBoundingClientRect();for(const b of bullets)if(b.owner===t.id){this.seen.add(b.id);this.firstShot??={vx:b.vx,vy:b.vy,bounces:b.bounces||0};}return {x:t.x,y:t.y,angle:t.angle,bodyAngle:window.leqraNet.bodyHeading(t),hp:t.hp,independentAim:t.independentAim,input:typeof inputState==="function"?inputState(session):null,fired:this.seen.size,firstShot:this.firstShot,fire:primaryFireHeld(),aim:directAim.active,screenX:r.left+offsetX+t.x*scale,screenY:r.top+offsetY+t.y*scale}; }
 };
 window.leqraInfinityArt=Object.freeze({`,
   ),
@@ -40,8 +41,8 @@ window.leqraInfinityArt=Object.freeze({`,
     `
 window.__fireInfinity = {
  seen: new Set(),
- setup(online) { this.seen.clear(); stop(); start(online?'online':'offline',{public:online,roomRules:{infinity:true,infinityRandomBots:false,pickupRate:'off'}}); if(!online) for(const tank of session.tanks) Object.assign(tank,{spawnProtected:false,invulnerable:1000}); },
- read() { const t=session?.tanks.find(t=>t.id===session.id), r=canvas.getBoundingClientRect();if(t)for(const b of session.bullets)if(b.owner===t.id)this.seen.add(b.id);return t?{x:t.x,y:t.y,angle:t.angle,bodyAngle:window.leqraNet.bodyHeading(t),hp:t.hp,independentAim:t.independentAim,input:typeof inputState==="function"?inputState(session):null,fired:this.seen.size,fire:inputState(session).fire,aim:!!inputState(session).snapAim||Math.hypot(inputState(session).aimX||0,inputState(session).aimY||0)>0.1,joined:session.joined||!session.online,screenX:r.left+r.width/2,screenY:r.top+r.height/2}:null; }
+ setup(online) { this.seen.clear(); this.firstShot=null; stop(); start(online?'online':'offline',{public:online,roomRules:{infinity:true,infinityRandomBots:false,pickupRate:'off'}}); if(!online) for(const tank of session.tanks) Object.assign(tank,{spawnProtected:false,invulnerable:1000}); },
+ read() { const t=session?.tanks.find(t=>t.id===session.id), r=canvas.getBoundingClientRect();if(t)for(const b of session.bullets)if(b.owner===t.id){this.seen.add(b.id);this.firstShot??={vx:b.vx,vy:b.vy,bounces:b.bounces||0};}return t?{x:t.x,y:t.y,angle:t.angle,bodyAngle:window.leqraNet.bodyHeading(t),hp:t.hp,independentAim:t.independentAim,input:typeof inputState==="function"?inputState(session):null,fired:this.seen.size,firstShot:this.firstShot,fire:inputState(session).fire,aim:!!inputState(session).snapAim||Math.hypot(inputState(session).aimX||0,inputState(session).aimY||0)>0.1,joined:session.joined||!session.online,screenX:r.left+r.width/2,screenY:r.top+r.height/2}:null; }
 };
 window.leqraInfinity =`,
   ),
@@ -125,7 +126,8 @@ async function main() {
           const selector = fixed ? "#fireBtn" : "#infiniteFire"
           await page.locator(selector).waitFor({ state: "visible" })
           const box = await page.locator(selector).boundingBox()
-          const start = { x: box.x + box.width / 2 + (center ? 0 : 32), y: box.y + box.height / 2 }
+          const buttonCenter = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+          const start = { x: buttonCenter.x, y: buttonCenter.y - (center ? 0 : 32) }
           async function pointer(type, x = start.x, y = start.y) {
             await page.evaluate(
               ({ selector, type, x, y }) => {
@@ -149,13 +151,28 @@ async function main() {
           const before = await page.evaluate((hook) => window[hook].read(), hook)
           await pointer("pointerdown")
           await page.waitForFunction((hook) => window[hook].read().fired > 0, hook)
+          if (!center) {
+            const first = await page.evaluate((hook) => window[hook].read(), hook)
+            assert(first.aim, caseName + " must aim on the initial press")
+            assert(
+              Math.abs(first.firstShot.vx) < 1e-6,
+              caseName + " first shot must use the new vertical aim",
+            )
+            assert(Math.abs(first.firstShot.vy) > 1, caseName + " first shot must move along the aimed axis")
+            if (!first.firstShot.bounces)
+              assert(first.firstShot.vy < 0, caseName + " first shot must travel north")
+          }
           if (center) await page.waitForTimeout(50)
-          await pointer("pointermove", start.x + 5, start.y)
+          await pointer("pointermove", buttonCenter.x + 5, buttonCenter.y)
           const tapped = await page.evaluate((hook) => window[hook].read(), hook)
-          assert.equal(tapped.aim, false, mode + " dead zone")
+          assert.equal(tapped.aim, !center, mode + " dead zone retains any existing aim")
           assert.equal(tapped.fire, true, "Touch-down starts continuous fire")
           for (const angle of [-Math.PI / 2, Math.PI, Math.PI / 4]) {
-            await pointer("pointermove", start.x + Math.cos(angle) * 32, start.y + Math.sin(angle) * 32)
+            await pointer(
+              "pointermove",
+              buttonCenter.x + Math.cos(angle) * 32,
+              buttonCenter.y + Math.sin(angle) * 32,
+            )
             await page.waitForFunction(
               ({ hook, angle }) => {
                 const state = window[hook].read()
@@ -236,7 +253,7 @@ async function main() {
           await page.waitForFunction((hook) => Math.cos(window[hook].read().bodyAngle) > 0.999, hook)
           const driveBefore = await page.evaluate((hook) => window[hook].read(), hook)
           await pointer("pointerdown")
-          await pointer("pointermove", start.x, start.y - 32)
+          await pointer("pointermove", buttonCenter.x, buttonCenter.y - 32)
           await page.waitForTimeout(500)
           const driving = await page.evaluate((hook) => window[hook].read(), hook)
           if (mode !== "fixed-wall")
