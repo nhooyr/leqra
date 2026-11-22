@@ -1,7 +1,10 @@
 ## Changelog
 
-## v5.8.1 (Unreleased)
+## v5.8.1
 
+- Move the Fire crosshair with touch aiming and recenter it on release across web, iOS, and Android.
+- Update the quick tour on web, iOS, and Android to explain center aiming, tap-to-fire on release, and continuous firing from the outer area.
+- Drag from the center of Fire to aim and pivot without shooting on mobile web, iOS, and Android. Tap the center to shoot on release, or hold/drag the outer area to fire continuously. Preserve the existing near-tank aiming gesture and mobile turning assistance.
 - Use complete versions such as `v5.8.1-dev` across server, web, and native clients, with suffix-aware asset generation and numeric native package fields.
 - Update the Android Gradle wrapper to 9.9.2.
 - Run Android CI with the checked-in wrapper, retaining caching and removing separate Gradle version setup.

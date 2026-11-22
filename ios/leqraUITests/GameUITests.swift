@@ -658,6 +658,12 @@ final class GameUITests: XCTestCase {
                 excludedTourTerms.contains { instructions.label.localizedCaseInsensitiveContains($0) })
             XCTAssertTrue(stage.waitForExistence(timeout: 5))
             XCTAssertFalse(next.isEnabled)
+            if page == 1 {
+                XCTAssertEqual(
+                    instructions.label,
+                    "Drag the center of Fire to aim without shooting. Tap the center to shoot on release, or hold the outer area for continuous fire."
+                )
+            }
             if page == 2 {
                 XCTAssertEqual(instructions.label, "Destroy the stationary tank to score a point.")
                 XCTAssertEqual(score.label, "score: 0")
@@ -913,7 +919,7 @@ final class GameUITests: XCTestCase {
                 XCTAssertEqual(
                     tapped["standardBullets"], 0, "A short final \(weapon) tap also fired standard ammo")
                 if weapon == "grenade" { fire.press(forDuration: 0.05) }
-                fire.press(forDuration: 1.1)
+                fire.withOffset(CGVector(dx: 30, dy: 0)).press(forDuration: 1.1)
                 XCTAssertGreaterThan(
                     p2InputState(stage)["standardBullets"] ?? 0, 0,
                     "Genuinely held fire must continue with standard ammo after reload")
@@ -1124,7 +1130,7 @@ final class GameUITests: XCTestCase {
                 predicate: NSPredicate { _, _ in value("grenades") == 1 && value("charges") == 2 },
                 object: stage)
             XCTAssertEqual(XCTWaiter.wait(for: [thrown], timeout: 5), .completed)
-            fire.press(forDuration: 1.1)
+            fire.withOffset(CGVector(dx: 30, dy: 0)).press(forDuration: 1.1)
             XCTAssertEqual(value("grenades"), 0, "Detonating then holding must not throw another grenade")
             XCTAssertEqual(value("charges"), 2, "Detonation cannot consume the next grenade charge")
             fire.press(forDuration: 0.05)
@@ -1225,6 +1231,69 @@ final class GameUITests: XCTestCase {
                 XCTAssertEqual(try XCTUnwrap(after["y"]), try XCTUnwrap(before["y"]), accuracy: 0.0001)
             }
             capture(app, name: "Direct aim touches " + (fixed ? "fixed" : "Infinity"))
+            app.terminate()
+        }
+    }
+
+    @MainActor
+    func testFireDragAimsInPlaceInBothLayouts() throws {
+        for fixed in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = [
+                "--probe-direct-aim", "--public-session-test-namespace", "fire-aim-" + UUID().uuidString,
+            ]
+            if fixed { app.launchArguments.append("--probe-fixed") }
+            XCUIDevice.shared.orientation = .portrait
+            app.launch()
+            let stage = arena(in: app)
+            func telemetry() -> [String: Double] {
+                Dictionary(
+                    uniqueKeysWithValues: ((stage.value as? String) ?? "").split(separator: ",").compactMap {
+                        let parts = $0.split(separator: "=", maxSplits: 1).map(String.init)
+                        guard parts.count == 2, let value = Double(parts[1]) else { return nil }
+                        return (parts[0], value)
+                    })
+            }
+            let ready = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in telemetry()["fireX"] != nil }, object: stage)
+            XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
+            for direction in [-Double.pi / 2, Double.pi, Double.pi / 4] {
+                let before = telemetry()
+                let origin = app.coordinate(withNormalizedOffset: .zero)
+                let fire = origin.withOffset(
+                    CGVector(
+                        dx: stage.frame.minX + (before["fireX"] ?? 0),
+                        dy: stage.frame.maxY - (before["fireY"] ?? 0)))
+                fire.press(
+                    forDuration: 0.05,
+                    thenDragTo: fire.withOffset(CGVector(dx: cos(direction) * 32, dy: sin(direction) * 32)),
+                    withVelocity: .slow, thenHoldForDuration: 1.2)
+                let aimed = XCTNSPredicateExpectation(
+                    predicate: NSPredicate { _, _ in
+                        guard let angle = telemetry()["angle"] else { return false }
+                        return abs(sin(angle - direction)) < 0.06 && cos(angle - direction) > 0.99
+                    }, object: stage)
+                XCTAssertEqual(XCTWaiter.wait(for: [aimed], timeout: 5), .completed)
+                let after = telemetry()
+                XCTAssertEqual(after["crosshairX"], 0)
+                XCTAssertEqual(after["crosshairY"], 0)
+                XCTAssertEqual(try XCTUnwrap(after["x"]), try XCTUnwrap(before["x"]), accuracy: 0.0001)
+                XCTAssertEqual(try XCTUnwrap(after["y"]), try XCTUnwrap(before["y"]), accuracy: 0.0001)
+                XCTAssertEqual(
+                    after["bullets"], 0, "Center drags must never fire, including on touch-down or release")
+            }
+            let point = telemetry()
+            let fire = app.coordinate(withNormalizedOffset: .zero).withOffset(
+                CGVector(
+                    dx: stage.frame.minX + (point["fireX"] ?? 0),
+                    dy: stage.frame.maxY - (point["fireY"] ?? 0)))
+            fire.press(forDuration: 0.06)
+            let tapped = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in (telemetry()["bullets"] ?? 0) > 0 }, object: stage)
+            XCTAssertEqual(XCTWaiter.wait(for: [tapped], timeout: 5), .completed)
+            fire.withOffset(CGVector(dx: 30, dy: 0)).press(forDuration: 0.6)
+            XCTAssertGreaterThan(telemetry()["bullets"] ?? 0, 1, "The outer area retains continuous firing")
+            capture(app, name: "Fire drag aim " + (fixed ? "fixed" : "Infinity"))
             app.terminate()
         }
     }

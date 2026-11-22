@@ -78,7 +78,7 @@ final class GameScene: SKScene {
     }
     var directAimProbePoint: CGPoint? { aimTankPosition.map { CGPoint(x: $0.x, y: size.height - $0.y) } }
     var controlLabelProbe: String {
-        "controlLabels=\(controls.children.filter { $0 is SKLabelNode }.count),stickBottom=\(stickOrigin.y - 51 - stickKnob.lineWidth / 2),fireBottom=\(fireOrigin.y - 53.5 - fireTrackRing.lineWidth / 2),controlCenterY=\(fireOrigin.y)"
+        "controlLabels=\(controls.children.filter { $0 is SKLabelNode }.count),stickBottom=\(stickOrigin.y - 51 - stickKnob.lineWidth / 2),fireBottom=\(fireOrigin.y - 53.5 - fireTrackRing.lineWidth / 2),controlCenterY=\(fireOrigin.y),fireX=\(fireOrigin.x),fireY=\(fireOrigin.y),crosshairX=\(fireCrosshair.position.x),crosshairY=\(-fireCrosshair.position.y)"
     }
     private let emptyFireProbe = ProcessInfo.processInfo.arguments.contains("--probe-empty-fire-feedback")
     private(set) var layoutMode: LayoutMode = .infinity
@@ -104,6 +104,7 @@ final class GameScene: SKScene {
     private let stickBase = SKShapeNode(circleOfRadius: 57)
     private let stickKnob = SKShapeNode(circleOfRadius: 25)
     private let fireButton = SKShapeNode(circleOfRadius: 52)
+    private let fireCrosshair = SKShapeNode()
     private let fireReadyRing = SKShapeNode()
     private let fireTrackRing = SKShapeNode(circleOfRadius: 53.5)
     private let aimingGuide = SKShapeNode()
@@ -129,6 +130,8 @@ final class GameScene: SKScene {
     private var aimTankPosition: CGPoint?
     private var stickTouch: UITouch?
     private var fireTouch: UITouch?
+    private var fireTouchOrigin = CGPoint.zero
+    private var fireTouchCenter = false
     private var stickOrigin = CGPoint.zero
     private var fireOrigin = CGPoint.zero
     private var previousTime: TimeInterval = 0
@@ -239,7 +242,7 @@ final class GameScene: SKScene {
         controlBar.lineWidth = 1
         controlBar.zPosition = -1
         controls.addChild(controlBar)
-        let crosshair = SKShapeNode()
+        let crosshair = fireCrosshair
         let path = CGMutablePath()
         path.addEllipse(in: CGRect(x: -7, y: -7, width: 14, height: 14))
         for axis in [-1.0, 1.0] {
@@ -492,6 +495,7 @@ final class GameScene: SKScene {
         aimTouch = nil
         stickTouch = nil
         fireTouch = nil
+        fireCrosshair.position = .zero
         inputSources.reset()
         publishInput()
         stickKnob.position = stickOrigin
@@ -1300,7 +1304,9 @@ final class GameScene: SKScene {
                 && location.y < max(210, size.height * 0.38)
             {
                 fireTouch = touch
-                setFireSource(.touch, down: true)
+                fireTouchOrigin = location
+                fireTouchCenter = hypot(location.x - fireOrigin.x, location.y - fireOrigin.y) <= 22
+                setFireSource(.touch, down: !fireTouchCenter)
                 impact.prepare()
             }
         }
@@ -1312,6 +1318,17 @@ final class GameScene: SKScene {
                 _ = updateDirectAim(touch.location(in: self))
             } else if touch === stickTouch {
                 updateStick(touch.location(in: self))
+            } else if touch === fireTouch {
+                let point = touch.location(in: self)
+                let dx = Double(point.x - fireTouchOrigin.x)
+                let dy = Double(fireTouchOrigin.y - point.y)
+                let distance = hypot(dx, dy)
+                if distance.isFinite && distance >= 8 {
+                    inputSources.fireAim = BeamPoint(x: dx / distance, y: dy / distance)
+                    let scale = min(1, 24 / distance)
+                    fireCrosshair.position = CGPoint(x: dx * scale, y: -dy * scale)
+                    publishInput()
+                }
             }
         }
     }
@@ -1319,10 +1336,10 @@ final class GameScene: SKScene {
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) { endTouches(touches) }
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         if touches.contains(where: { $0 === aimTouch }) { clearDirectAim() }
-        endTouches(touches)
+        endTouches(touches, cancelled: true)
     }
 
-    private func endTouches(_ touches: Set<UITouch>) {
+    private func endTouches(_ touches: Set<UITouch>, cancelled: Bool = false) {
         for touch in touches {
             if touch === aimTouch { aimTouch = nil }
             if touch === stickTouch {
@@ -1334,7 +1351,17 @@ final class GameScene: SKScene {
                 stickKnob.position = stickOrigin
             }
             if touch === fireTouch {
+                let tap = fireTouchCenter && inputSources.fireAim == nil && !cancelled
+                if let direction = inputSources.fireAim, !cancelled, stickTouch == nil, aimTouch == nil {
+                    inputSources.touch.stickX = direction.x
+                    inputSources.touch.stickY = direction.y
+                    inputSources.touch.aimOnly = true
+                    inputSources.touch.snapAim = true
+                }
+                inputSources.fireAim = nil
                 fireTouch = nil
+                fireCrosshair.position = .zero
+                if tap { setFireSource(.touch, down: true) }
                 setFireSource(.touch, down: false)
             }
         }

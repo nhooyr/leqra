@@ -20,7 +20,7 @@
       "This browser cannot create a 2D canvas. Please open the game in another browser."
     return
   }
-  const GAME_VERSION = "v5.8.1-dev"
+  const GAME_VERSION = "v5.8.1"
   const GAME_PROTOCOL = 1
   const TAU = Math.PI * 2,
     CELL = 84,
@@ -1905,6 +1905,8 @@
     keys.clear()
     gamepads.clear()
     firePointers.clear()
+    fireDrag.id = null
+    fireDrag.active = false
     firePresses.clear()
     mouseAim.firePointers?.clear()
     mouseAim.firePressed = false
@@ -1920,6 +1922,8 @@
     stick.cx = stick.cy = 0
     $("stickKnob").style.transform = "translate(0,0)"
     $("fireBtn").classList.remove("held")
+    $("fireBtn").style.setProperty("--fire-aim-x", "0px")
+    $("fireBtn").style.setProperty("--fire-aim-y", "0px")
   }
   function setMode(value) {
     delete $("manualContent").dataset.content
@@ -14039,7 +14043,7 @@
             .join(" ")
     const help =
       device === "touch"
-        ? "Drag the stick to move and aim. Touch near the tank to aim in place. Tap or hold Fire."
+        ? "Drag the stick to move and aim. Touch near the tank to aim in place. Drag the center of Fire to aim without shooting. Tap it to shoot, or hold the outer area for continuous fire."
         : ""
     return (
       '<span class="control-player">' +
@@ -14063,7 +14067,7 @@
       paired = !aliases && !!(infinity?.twoPilots || hasLocalP2())
     const fireTip = '<p class="manual-fire-tip">Hold any fire key to rapid fire.</p>'
     let html =
-      '<div class="manual-line manual-touch"><span>Touch</span><span>Drag the joystick to drive and aim. Touch near the tank to aim in place. Tap or hold Fire to shoot.</span></div>'
+      '<div class="manual-line manual-touch"><span>Touch</span><span>Drag the joystick to drive and aim. Touch near the tank to aim in place. Drag the center of Fire to aim without shooting. Tap it to shoot, or hold the outer area for continuous fire.</span></div>'
     html += "<p>Connect a game controller to play.</p>"
     html += '<div class="manual-controls">' + pilotControlHint(0, "mouse", aliases, !aliases)
     if (paired) html += pilotControlHint(1, "", false, true)
@@ -16553,6 +16557,7 @@
       stickX = 0,
       stickY = 0,
       touchAim = null,
+      practiceFireDrag = null,
       mousePoint = null,
       firePressed = false
     const interactive = () => dialog.open && step < 3 && !!demo
@@ -16562,13 +16567,17 @@
       for (const code of keys) if (bindings[code] === action) return true
       return false
     }
-    const practiceFireHeld = () => held("fire") || fireID !== null || !!gamepadInput(0)?.fire
+    const practiceFireHeld = () =>
+      held("fire") || (fireID !== null && !practiceFireDrag?.center) || !!gamepadInput(0)?.fire
     function clearPracticeInput() {
       keys.clear()
       gamepads.clear()
       stickID = aimID = fireID = null
       stickX = stickY = 0
       touchAim = mousePoint = null
+      practiceFireDrag = null
+      fireButton.style.setProperty("--fire-aim-x", "0px")
+      fireButton.style.setProperty("--fire-aim-y", "0px")
       firePressed = false
       knob.style.transform = ""
       fireButton.classList.remove("held")
@@ -16699,7 +16708,7 @@
     joystick.addEventListener("pointerdown", (e) => {
       if (!interactive() || !usesTouch() || e.button !== 0 || stickID !== null) return
       e.preventDefault()
-      touchAim = null
+      if (!practiceFireDrag?.active) touchAim = null
       stickID = e.pointerId
       capturePointer(joystick, stickID)
       steer(e)
@@ -16708,10 +16717,24 @@
       if (!canFire() || fireID !== null) return
       e.preventDefault()
       initAudio()
-      if (!practiceFireHeld()) firePressed = true
+      const was = practiceFireHeld()
       fireID = e.pointerId
+      if (element === fireButton && (e.pointerType === "touch" || e.pointerType === "pen")) {
+        const rect = element.getBoundingClientRect()
+        practiceFireDrag = {
+          x: e.clientX,
+          y: e.clientY,
+          active: false,
+          reach: Math.min(24, Math.max(0, Math.min(rect.width, rect.height) / 2 - 17)),
+          center: Net.fireAimCenter(
+            e.clientX - rect.left - rect.width / 2,
+            e.clientY - rect.top - rect.height / 2,
+          ),
+        }
+      }
+      if (!was && !practiceFireDrag?.center) firePressed = true
       capturePointer(element, fireID)
-      if (element === fireButton) fireButton.classList.add("held")
+      if (element === fireButton && !practiceFireDrag?.center) fireButton.classList.add("held")
     }
     fireButton.addEventListener("pointerdown", (e) => {
       if (interactive() && usesTouch() && e.button === 0) beginPracticeFire(e, fireButton)
@@ -16746,6 +16769,21 @@
     })
     window.addEventListener("pointermove", (e) => {
       if (!interactive()) return
+      if (practiceFireDrag && e.pointerId === fireID) {
+        const direction = Net.fireAimDirection(e.clientX - practiceFireDrag.x, e.clientY - practiceFireDrag.y)
+        if (direction) {
+          e.preventDefault()
+          practiceFireDrag.active = true
+          touchAim = Math.atan2(direction.y, direction.x)
+          const offset = Net.fireAimOffset(
+            e.clientX - practiceFireDrag.x,
+            e.clientY - practiceFireDrag.y,
+            practiceFireDrag.reach,
+          )
+          fireButton.style.setProperty("--fire-aim-x", offset.x + "px")
+          fireButton.style.setProperty("--fire-aim-y", offset.y + "px")
+        }
+      }
       if (e.pointerId === stickID) {
         e.preventDefault()
         steer(e)
@@ -16765,7 +16803,13 @@
         if (e.type === "pointercancel") touchAim = null
       }
       if (e.pointerId === fireID) {
+        const tap = practiceFireDrag?.center && !practiceFireDrag.active && e.type === "pointerup"
+        if (practiceFireDrag?.active && (e.type === "pointercancel" || stickID !== null)) touchAim = null
+        practiceFireDrag = null
         fireID = null
+        fireButton.style.setProperty("--fire-aim-x", "0px")
+        fireButton.style.setProperty("--fire-aim-y", "0px")
+        if (tap && !practiceFireHeld()) firePressed = true
         fireButton.classList.remove("held")
         if (e.type === "pointerup") primeAudioUnlock(e)
       }
@@ -17376,6 +17420,7 @@
   }
   // All input paths (keyboard, mouse, multi-touch, focus loss) share the same cleanup.
   const directAim = { active: false, id: null, angle: 0 }
+  const fireDrag = { id: null, x: 0, y: 0, active: false, center: false }
   function clearDirectAim() {
     directAim.active = false
     directAim.id = null
@@ -17442,7 +17487,7 @@
     stick.max = Math.max(24, Math.min(r.width, r.height) * 0.375)
   }
   function stickMove(e) {
-    clearDirectAim()
+    if (!fireDrag.active) clearDirectAim()
     if (!stick.cx && !stick.cy) cacheStickGeometry()
     const dx = e.clientX - stick.cx,
       dy = e.clientY - stick.cy,
@@ -17502,33 +17547,80 @@
     initAudio()
     const secondary = e.pointerType === "mouse" && hardwareUsesP2(),
       was = secondary ? secondaryFireHeld() : primaryFireHeld()
-    firePointers.add(e.pointerId)
+    if (
+      element === $("fireBtn") &&
+      (e.pointerType === "touch" || e.pointerType === "pen") &&
+      fireDrag.id === null
+    ) {
+      const rect = element.getBoundingClientRect()
+      Object.assign(fireDrag, {
+        id: e.pointerId,
+        x: e.clientX,
+        y: e.clientY,
+        active: false,
+        reach: Math.min(24, Math.max(0, Math.min(rect.width, rect.height) / 2 - 17)),
+        center: Net.fireAimCenter(
+          e.clientX - rect.left - rect.width / 2,
+          e.clientY - rect.top - rect.height / 2,
+        ),
+      })
+    }
+    const center = fireDrag.id === e.pointerId && fireDrag.center
+    if (!center) firePointers.add(e.pointerId)
     if (e.pointerType === "mouse") (mouseAim.firePointers ??= new Set()).add(e.pointerId)
-    if (!was) {
+    if (!was && !center) {
       if (e.pointerType === "mouse") mouseAim.firePressed = true
       else firePresses.add(localPlayerID())
     }
     capturePointer(element, e.pointerId)
-    if (!secondary) $("fireBtn").classList.add("held")
-    if (!was && mode === "online") sendOnlineInput(true)
+    if (!secondary && !center) $("fireBtn").classList.add("held")
+    if (!was && !center && mode === "online") sendOnlineInput(true)
   }
   $("fireBtn").addEventListener("pointerdown", (e) => {
     if (e.button === 0) beginPointerFire(e, $("fireBtn"))
   })
+  window.addEventListener(
+    "pointermove",
+    (e) => {
+      if (e.pointerId !== fireDrag.id || phase !== "playing") return
+      const direction = Net.fireAimDirection(e.clientX - fireDrag.x, e.clientY - fireDrag.y)
+      if (!direction) return
+      e.preventDefault()
+      fireDrag.active = true
+      directAim.active = true
+      directAim.id = null
+      directAim.angle = Math.atan2(direction.y, direction.x)
+      const offset = Net.fireAimOffset(e.clientX - fireDrag.x, e.clientY - fireDrag.y, fireDrag.reach)
+      $("fireBtn").style.setProperty("--fire-aim-x", offset.x + "px")
+      $("fireBtn").style.setProperty("--fire-aim-y", offset.y + "px")
+      if (mode === "online") sendOnlineInput(true)
+    },
+    true,
+  )
   function endFire(e) {
+    const pending = e.pointerId === fireDrag.id
+    const tap = pending && fireDrag.center && !fireDrag.active && e.type === "pointerup"
+    if (pending) {
+      if (fireDrag.active && (e.type === "pointercancel" || stick.id !== null)) clearDirectAim()
+      fireDrag.id = null
+      fireDrag.active = false
+      $("fireBtn").style.setProperty("--fire-aim-x", "0px")
+      $("fireBtn").style.setProperty("--fire-aim-y", "0px")
+    }
     mouseAim.firePointers?.delete(e.pointerId)
-    if (!firePointers.delete(e.pointerId)) return
+    const held = firePointers.delete(e.pointerId)
+    if (!held && !pending) return
     if (firePointers.size <= (hardwareUsesP2() ? mouseAim.firePointers?.size || 0 : 0))
       $("fireBtn").classList.remove("held")
     if (e.type === "pointerup") primeAudioUnlock(e)
+    if (tap) tapFire()
     if (mode === "online") sendOnlineInput(true)
   }
   $("fireBtn").addEventListener("pointerup", endFire)
   $("fireBtn").addEventListener("pointercancel", endFire)
   $("fireBtn").addEventListener("lostpointercapture", endFire)
-  $("fireBtn").addEventListener("click", (e) => {
-    // Native keyboard and assistive activation has no pointer press to fire from.
-    if (e.detail !== 0 || phase !== "playing" || primaryFireHeld()) return
+  function tapFire() {
+    if (phase !== "playing" || primaryFireHeld()) return
     initAudio()
     if (mode !== "online") {
       firePresses.add(localPlayerID())
@@ -17538,6 +17630,10 @@
     const controls = onlineControls()
     sendOnlineInput(true, { ...controls, fire: true })
     sendOnlineInput(true, controls)
+  }
+  $("fireBtn").addEventListener("click", (e) => {
+    // Native keyboard and assistive activation has no pointer press to fire from.
+    if (e.detail === 0) tapFire()
   })
   // WebKit occasionally loses element-level pointer capture during a two-finger
   // joystick + fire gesture. Window-level release handlers prevent stuck inputs.
@@ -17583,6 +17679,7 @@
     return Math.atan2(dy, dx)
   }
   function updateDirectAim(e, nearOnly = false) {
+    if (fireDrag.active) return false
     const angle = directAimPoint(e, nearOnly)
     if (angle === null) return false
     directAim.active = true

@@ -676,7 +676,7 @@ struct ControlsPanel: View {
                         Text("Touch controls P1.").font(.system(size: 12)).foregroundStyle(WebStyle.soft)
                     }
                     Text(
-                        "Drag the left stick to drive and aim. Touch near your tank to rotate exactly toward that point without moving. Hold the right Fire button to shoot. Pickups equip automatically."
+                        "Drag the left stick to drive and aim. Touch near your tank to rotate exactly toward that point without moving. Drag the center of Fire to aim without shooting. Tap the center to shoot on release, or hold the outer area for continuous fire. Pickups equip automatically."
                     ).font(.system(size: 13)).lineSpacing(5)
                     HardwareControlsPanel(
                         session: session, keyboardConnected: keyboardConnected, mouseConnected: mouseConnected
@@ -760,7 +760,10 @@ private struct QuickTourPanel: View {
     @State private var page = 0
     private static let lessons: [(title: String, instruction: String)] = [
         ("Drive and aim", "Drag the left stick to drive. Touch near your tank to aim without moving."),
-        ("Fire", "Hold the right Fire button to shoot."),
+        (
+            "Fire",
+            "Drag the center of Fire to aim without shooting. Tap the center to shoot on release, or hold the outer area for continuous fire."
+        ),
         ("Score a point", "Destroy the stationary tank to score a point."),
     ]
 
@@ -1126,7 +1129,7 @@ struct FieldManualContent: View {
             Text("FIELD MANUAL").font(WebStyle.mono()).foregroundStyle(WebStyle.accent)
             Text("Touch").font(.system(size: 13, weight: .semibold))
             Text(
-                "Drag the joystick to drive and aim. Touch near the tank to aim in place. Tap or hold Fire to shoot."
+                "Drag the joystick to drive and aim. Touch near the tank to aim in place. Drag the center of Fire to aim without shooting. Tap it to shoot, or hold the outer area for continuous fire."
             ).font(.system(size: 12)).foregroundStyle(WebStyle.soft)
             if includeSidebarControls {
                 Text("Connect a game controller to play.")

@@ -52,7 +52,14 @@ function element() {
     attrs = new Map()
   return {
     ...eventTarget(),
-    style: {},
+    style: {
+      setProperty(key, value) {
+        this[key] = String(value)
+      },
+      getPropertyValue(key) {
+        return this[key] || ""
+      },
+    },
     hidden: false,
     title: "",
     classList: {
@@ -94,6 +101,9 @@ function boot() {
     },
     window = eventTarget()
   const s = {
+    Net: require(assetPath("netcode.js")),
+    fireDrag: { id: null, x: 0, y: 0, active: false },
+    directAim: { active: false, id: null, angle: 0 },
     document,
     window,
     $,
@@ -108,7 +118,10 @@ function boot() {
     mouseAim: { active: false, pointer: null, firePressed: false },
     firePointers: new Set(),
     firePresses: new Set(),
-    clearDirectAim() {},
+    clearDirectAim() {
+      s.directAim.active = false
+      s.directAim.id = null
+    },
     initAudio() {},
     primeAudioUnlock() {},
     localPlayerID: () => 0,
@@ -243,6 +256,56 @@ test("joystick plus Fire keep independent pointers through a prevented pinch and
   assert.equal(b.s.stick.assisted, false)
   assert.equal(b.s.stick.mag, 0)
   assert.equal(b.$("fireBtn").classList.contains("held"), false)
+})
+
+test("Fire drag has a dead zone, retains aim on release, and gives a held joystick control again", () => {
+  const b = boot()
+  b.setPhase("playing")
+  const start = { pointerId: 11, pointerType: "touch", clientX: 300, clientY: 500 }
+  b.$("fireBtn").emit("pointerdown", start)
+  b.window.emit("pointermove", { ...start, clientX: 307 })
+  assert.equal(b.s.directAim.active, false)
+  b.window.emit("pointermove", { ...start, clientY: 460 })
+  assert.equal(b.s.directAim.angle, -Math.PI / 2)
+  assert.equal(b.$("fireBtn").style["--fire-aim-y"], "-24px")
+  assert.equal(b.s.firePointers.has(11), true)
+  assert.equal(b.s.firePresses.size, 1, "dragging never invents another fire/detonation press")
+  b.window.emit("pointermove", start)
+  assert.equal(b.s.directAim.angle, -Math.PI / 2, "returning to the dead zone retains the chosen angle")
+  b.window.emit("pointerup", start)
+  assert.equal(b.s.directAim.active, true)
+  assert.equal(b.s.firePointers.size, 0)
+  assert.equal(b.$("fireBtn").style["--fire-aim-y"], "0px")
+  b.$("stickZone").emit("pointerdown", { pointerId: 12, pointerType: "touch", clientX: 80, clientY: 48 })
+  b.$("fireBtn").emit("pointerdown", start)
+  b.window.emit("pointermove", { ...start, clientY: 460 })
+  b.window.emit("pointermove", { pointerId: 12, clientX: 60, clientY: 48 })
+  assert.equal(b.s.directAim.active, true)
+  assert.equal(b.s.stick.assisted, true)
+  b.window.emit("pointerup", start)
+  assert.equal(b.s.directAim.active, false)
+  b.window.emit("pointercancel", { pointerId: 12 })
+})
+
+test("center Fire drags never fire, center taps fire on release, and cancelled center touches stay silent", () => {
+  const b = boot()
+  b.setPhase("playing")
+  const start = { pointerId: 14, pointerType: "touch", clientX: 48, clientY: 48 }
+  b.$("fireBtn").emit("pointerdown", start)
+  assert.equal(b.s.primaryFireHeld(), false)
+  assert.equal(b.s.firePresses.size, 0)
+  b.window.emit("pointermove", { ...start, clientY: 10 })
+  assert.equal(b.s.directAim.active, true)
+  assert.equal(b.s.primaryFireHeld(), false)
+  b.window.emit("pointerup", start)
+  assert.equal(b.s.firePresses.size, 0, "a drag must not shoot when released")
+  b.$("fireBtn").emit("pointerdown", start)
+  b.window.emit("pointerup", start)
+  assert.equal(b.s.firePresses.size, 1)
+  b.s.firePresses.clear()
+  b.$("fireBtn").emit("pointerdown", start)
+  b.window.emit("pointercancel", start)
+  assert.equal(b.s.firePresses.size, 0)
 })
 
 test("Infinity keeps the active touch policy until the arena closes", () => {
@@ -511,4 +574,15 @@ test("superseded compact results release their touch lock without waiting for an
   assert.equal(b.s.pendingMatchPresentation, null)
   assert.equal(b.s.matchTouchLocked, false)
   assert.equal(b.s.presented, undefined)
+})
+
+test("Fire crosshair travel follows the drag and stays inside small and large buttons", () => {
+  const Net = require(assetPath("netcode.js"))
+  assert.deepEqual(Net.fireAimOffset(8, 0), { x: 8, y: 0 })
+  assert.deepEqual(Net.fireAimOffset(0, 100), { x: 0, y: 24 })
+  assert.ok(Math.abs(Net.fireAimOffset(-100, 0, 14).x + 14) < 1e-10)
+  assert.deepEqual(Net.fireAimOffset(0, 0), { x: 0, y: 0 })
+  const diagonal = Net.fireAimOffset(30, 40)
+  assert.ok(Math.abs(Math.hypot(diagonal.x, diagonal.y) - 24) < 1e-10)
+  assert.ok(Math.abs(diagonal.x / diagonal.y - 0.75) < 1e-10)
 })

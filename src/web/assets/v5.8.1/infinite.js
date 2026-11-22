@@ -89,6 +89,7 @@
   }
   const pressed = new Set()
   const directAim = { active: false, id: null, x: 0, y: 0 }
+  let fireDrag = null
   const touchAim = { x: 0, y: 0, cx: 0, cy: 0, reach: 0, assisted: false }
   let session = null,
     frame = 0,
@@ -438,7 +439,7 @@
       input.stickX = touchAim.x
       input.stickY = touchAim.y
       if (touchAim.assisted) input.touchAim = true
-      input.fire ||= firePointer !== null
+      input.fire ||= firePointer !== null && !fireDrag?.center
       if (directAim.active) {
         input.stickX = directAim.x
         input.stickY = directAim.y
@@ -3409,6 +3410,9 @@
   }
 
   function resetControls() {
+    fireDrag = null
+    fire.style.setProperty("--fire-aim-x", "0px")
+    fire.style.setProperty("--fire-aim-y", "0px")
     art.clearGamepads?.()
     directAim.active = false
     directAim.id = null
@@ -3771,8 +3775,10 @@
   }
 
   function updateStick(event) {
-    directAim.active = false
-    directAim.id = null
+    if (!fireDrag?.active) {
+      directAim.active = false
+      directAim.id = null
+    }
     const { cx, cy, reach } = touchAim
     if (!reach) return
     const x = event.clientX - cx,
@@ -3793,6 +3799,7 @@
 
   function endPointer(event) {
     let seat = session
+    let tap = false
     if (event.pointerId === directAim.id) {
       directAim.id = null
       if (event.type === "pointercancel") directAim.active = false
@@ -3803,7 +3810,13 @@
       knob.style.removeProperty("--stick-x")
       knob.style.removeProperty("--stick-y")
     } else if (event.pointerId === firePointer) {
+      tap = fireDrag?.center && !fireDrag.active && event.type === "pointerup"
+      if (fireDrag?.active && (event.type === "pointercancel" || stickPointer !== null))
+        directAim.active = false
+      fireDrag = null
       firePointer = null
+      fire.style.setProperty("--fire-aim-x", "0px")
+      fire.style.setProperty("--fire-aim-y", "0px")
       fire.classList.remove("held")
     } else if (event.pointerId === mousePointer) {
       mousePointer = null
@@ -3812,6 +3825,7 @@
       return
     }
     if (event.type === "pointerup") art.primeAudioUnlock(event)
+    if (tap && !padFireHeld(seat)) pressFire(event, seat)
     sendInput(seat, performance.now(), true)
   }
 
@@ -3861,6 +3875,7 @@
     if (seat) sendInput(seat, performance.now(), true)
   })
   function updateDirectAim(event, nearOnly = false) {
+    if (fireDrag?.active) return false
     if (!session || session.result || pauseMenu.open || (session.online && !session.joined)) return false
     const position = mousePosition(event),
       pilot = session.predictor?.state || session.tanks.find((t) => t.id === session.id)
@@ -3944,9 +3959,38 @@
     if (event.button !== 0 || firePointer !== null || art.chatOpen()) return
     capturePointer(fire, event)
     firePointer = event.pointerId
-    fire.classList.add("held")
-    if (session && !padFireHeld(session)) pressFire(event)
+    if (event.pointerType === "touch" || event.pointerType === "pen") {
+      const rect = fire.getBoundingClientRect()
+      fireDrag = {
+        x: event.clientX,
+        y: event.clientY,
+        active: false,
+        reach: Math.min(24, Math.max(0, Math.min(rect.width, rect.height) / 2 - 17)),
+        center: net.fireAimCenter(
+          event.clientX - rect.left - rect.width / 2,
+          event.clientY - rect.top - rect.height / 2,
+        ),
+      }
+    }
+    if (!fireDrag?.center) fire.classList.add("held")
+    if (session && !padFireHeld(session) && !fireDrag?.center) pressFire(event)
   })
+  window.addEventListener(
+    "pointermove",
+    (event) => {
+      if (!fireDrag || event.pointerId !== firePointer || !session || pauseMenu.open) return
+      const direction = net.fireAimDirection(event.clientX - fireDrag.x, event.clientY - fireDrag.y)
+      if (!direction) return
+      event.preventDefault()
+      fireDrag.active = true
+      Object.assign(directAim, direction, { active: true, id: null })
+      const offset = net.fireAimOffset(event.clientX - fireDrag.x, event.clientY - fireDrag.y, fireDrag.reach)
+      fire.style.setProperty("--fire-aim-x", offset.x + "px")
+      fire.style.setProperty("--fire-aim-y", offset.y + "px")
+      sendInput(session, performance.now(), true)
+    },
+    true,
+  )
   fire.addEventListener("click", (event) => {
     // Keyboard and assistive activation has no pointer press to queue the shot.
     if (event.detail === 0 && session && !padFireHeld(session)) pressFire(event)

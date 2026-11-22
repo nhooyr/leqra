@@ -32,4 +32,5 @@ xcodebuild -project ios/leqra.xcodeproj -scheme leqra \
 	-parallel-testing-enabled NO \
 	-only-testing:leqraUITests/GameUITests/testUnchangedOfflineCallsignResumeKeepsItsBattleWithoutAnAccountKey \
 	-only-testing:leqraUITests/GameUITests/testDeathNoticeMatchesTankLabelsInPortraitAndLandscape \
+	-only-testing:leqraUITests/GameUITests/testFireDragAimsInPlaceInBothLayouts \
 	CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= test

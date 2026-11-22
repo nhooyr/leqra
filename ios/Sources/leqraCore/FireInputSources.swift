@@ -34,6 +34,7 @@ public struct LocalInputSources: Sendable {
     public var keyboard = GameInput()
     public var gamepad = GameInput()
     public var mouseAim: BeamPoint?
+    public var fireAim: BeamPoint?
     public var mouseFire = false
     public init() {}
 
@@ -48,7 +49,10 @@ public struct LocalInputSources: Sendable {
         let touchActive = hypot(touch.stickX, touch.stickY) > 0.1
         let gamepadActive = hypot(gamepad.stickX, gamepad.stickY) > 0.1
         let aim: GameInput?
-        if touchActive {
+        if let fireAim {
+            aim = GameInput(
+                stickX: fireAim.x, stickY: fireAim.y, touchAim: true, aimOnly: true, snapAim: true)
+        } else if touchActive {
             aim = touch
         } else if gamepadActive {
             aim = gamepad

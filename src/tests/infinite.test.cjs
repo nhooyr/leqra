@@ -1954,7 +1954,7 @@ test("Infinity control groups preserve aliases through remapping and touch layou
   assert.equal((hint.innerHTML.match(/class="control-player"/g) || []).length, 2)
   assert.match(
     hint.textContent,
-    /Saved pilot \(P1\) Drag the stick to move and aim. Touch near the tank to aim in place. Tap or hold Fire./,
+    /Saved pilot \(P1\) Drag the stick to move and aim. Touch near the tank to aim in place. Drag the center of Fire to aim without shooting./,
   )
   assert.match(hint.textContent, /Wingmate \(P2\) Forward ↑ Reverse ↓ Left ← Right → Fire SPACE \/ ENTER/)
   bindings[1].fireAlt = "KeyV"
@@ -5997,5 +5997,76 @@ test("Infinity direct touch snaps in place, supports fire independently, and res
   assert.equal(packet.snapAim, undefined)
   assert.equal(packet.aimOnly, false)
   assert.equal(packet.stickY, 1)
+  h.infinity.close()
+})
+
+test("Infinity Fire drag sends in-place aim without extra fire edges and resets after cancellation", () => {
+  const h = harness(undefined, true)
+  h.infinity.start("online")
+  const socket = h.sockets[0]
+  socket.receive({ type: "welcome", id: 1, seed: 0 })
+  socket.receive({
+    type: "state",
+    tanks: [{ id: 1, x: 42, y: 42, angle: 0, hp: 1 }],
+    bullets: [],
+    leaderboard: [],
+    players: 1,
+  })
+  const start = { pointerType: "touch", button: 0, pointerId: 31, clientX: 320, clientY: 600 }
+  h.byID("infiniteFire").emit("pointerdown", start)
+  h.window.emit("pointermove", { ...start, clientX: 327 })
+  assert.equal(socket.sent.at(-1).snapAim, undefined)
+  h.window.emit("pointermove", { ...start, clientX: 280 })
+  let packet = socket.sent.at(-1)
+  assert.equal(packet.fire, true)
+  assert.equal(packet.snapAim, true)
+  assert.equal(packet.aimOnly, true)
+  assert.equal(packet.stickX, -1)
+  assert.equal(packet.stickY, 0)
+  h.window.emit("pointerup", start)
+  packet = socket.sent.at(-1)
+  assert.equal(packet.fire, false)
+  assert.equal(packet.snapAim, true)
+  h.byID("infiniteFire").emit("pointerdown", start)
+  h.window.emit("pointermove", { ...start, clientY: 570 })
+  h.window.emit("pointercancel", start)
+  assert.equal(socket.sent.at(-1).snapAim, undefined)
+  assert.equal(socket.sent.at(-1).fire, false)
+  h.infinity.close()
+})
+
+test("Infinity center Fire drag stays silent while a center tap sends one press on release", () => {
+  const h = harness(undefined, true)
+  h.infinity.start("online")
+  const socket = h.sockets[0]
+  socket.receive({ type: "welcome", id: 1, seed: 0 })
+  socket.receive({
+    type: "state",
+    tanks: [{ id: 1, x: 42, y: 42, angle: 0, hp: 1 }],
+    bullets: [],
+    leaderboard: [],
+    players: 1,
+  })
+  const button = h.byID("infiniteFire"),
+    rect = button.getBoundingClientRect()
+  const start = {
+    pointerType: "touch",
+    button: 0,
+    pointerId: 35,
+    clientX: rect.left + rect.width / 2,
+    clientY: rect.top + rect.height / 2,
+  }
+  const from = socket.sent.length
+  button.emit("pointerdown", start)
+  h.window.emit("pointermove", { ...start, clientY: start.clientY - 40 })
+  assert.equal(socket.sent.at(-1).snapAim, true)
+  h.window.emit("pointerup", start)
+  assert.equal(
+    socket.sent.slice(from).some((packet) => packet.type === "input" && packet.fire),
+    false,
+  )
+  button.emit("pointerdown", start)
+  h.window.emit("pointerup", start)
+  assert.equal(socket.sent.slice(from).filter((packet) => packet.type === "input" && packet.fire).length, 1)
   h.infinity.close()
 })

@@ -54,7 +54,25 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     private var noticeLayoutSize = 0f
     private var noticeLines: List<String> = emptyList()
     private val deathNotices = Array(2) { NativeDeathNotice() }
-    val input = GameInput(touchAim = true)
+    private val touchControls = GameInput(touchAim = true)
+    private var fireAim: Pair<Double, Double>? = null
+    private var fireTouchX = 0f
+    private var fireTouchY = 0f
+    private var fireTouchCenter = false
+    private var fireCrosshairX = 0f
+    private var fireCrosshairY = 0f
+    val input: GameInput
+        get() =
+            fireAim?.let { (x, y) ->
+                touchControls.copy(
+                    stickX = x,
+                    stickY = y,
+                    touchAim = true,
+                    aimOnly = true,
+                    snapAim = true,
+                )
+            } ?: touchControls
+
     var renderedFrames: Long = 0
         private set
 
@@ -425,18 +443,21 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         aimPointer = -1
         stickPointer = -1
         firePointer = -1
+        fireAim = null
+        fireCrosshairX = 0f
+        fireCrosshairY = 0f
         knobX = 0f
         knobY = 0f
         fireHeld = false
-        input.forward = false
-        input.reverse = false
-        input.left = false
-        input.right = false
-        input.fire = false
-        input.stickX = 0.0
-        input.stickY = 0.0
-        input.aimOnly = false
-        input.snapAim = false
+        touchControls.forward = false
+        touchControls.reverse = false
+        touchControls.left = false
+        touchControls.right = false
+        touchControls.fire = false
+        touchControls.stickX = 0.0
+        touchControls.stickY = 0.0
+        touchControls.aimOnly = false
+        touchControls.snapAim = false
         onInput?.invoke(input.copy())
         previewRecoil = 0.0
         localPreviewRecoil = 0.0
@@ -1715,23 +1736,24 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             paint,
         )
         stroke(0xff32c5ff.toInt(), 1.575f)
-        val cy = fireY
-        canvas.drawCircle(fireX, cy, 7f, paint)
-        canvas.drawLine(fireX - 11.375f, cy, fireX - 5.25f, cy, paint)
-        canvas.drawLine(fireX + 5.25f, cy, fireX + 11.375f, cy, paint)
-        canvas.drawLine(fireX, cy - 11.375f, fireX, cy - 5.25f, paint)
-        canvas.drawLine(fireX, cy + 5.25f, fireX, cy + 11.375f, paint)
+        val cx = fireX + fireCrosshairX
+        val cy = fireY + fireCrosshairY
+        canvas.drawCircle(cx, cy, 7f, paint)
+        canvas.drawLine(cx - 11.375f, cy, cx - 5.25f, cy, paint)
+        canvas.drawLine(cx + 5.25f, cy, cx + 11.375f, cy, paint)
+        canvas.drawLine(cx, cy - 11.375f, cx, cy - 5.25f, paint)
+        canvas.drawLine(cx, cy + 5.25f, cx, cy + 11.375f, paint)
         fill(0xff32c5ff.toInt())
-        canvas.drawCircle(fireX, cy, 1.75f, paint)
+        canvas.drawCircle(cx, cy, 1.75f, paint)
     }
 
     fun clearDirectAim() {
         aimPointer = -1
-        if (input.snapAim) {
-            input.stickX = 0.0
-            input.stickY = 0.0
-            input.snapAim = false
-            input.aimOnly = false
+        if (touchControls.snapAim) {
+            touchControls.stickX = 0.0
+            touchControls.stickY = 0.0
+            touchControls.snapAim = false
+            touchControls.aimOnly = false
         }
     }
 
@@ -1751,11 +1773,11 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             val divisor = max(29f, hypot(dx, dy))
             knobX = dx * 29 / divisor
             knobY = dy * 29 / divisor
-            input.stickX = (dx / divisor).toDouble()
-            input.stickY = (dy / divisor).toDouble()
-            input.touchAim = true
-            input.aimOnly = false
-            input.snapAim = false
+            touchControls.stickX = (dx / divisor).toDouble()
+            touchControls.stickY = (dy / divisor).toDouble()
+            touchControls.touchAim = true
+            touchControls.aimOnly = false
+            touchControls.snapAim = false
             aimPointer = -1
         }
         fun aim(index: Int, nearOnly: Boolean = false): Boolean {
@@ -1771,10 +1793,10 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                     nearOnly && distance > max(64f, 51 * aimTankZoom)
             )
                 return false
-            input.stickX = (dx / distance).toDouble()
-            input.stickY = (dy / distance).toDouble()
-            input.aimOnly = true
-            input.snapAim = true
+            touchControls.stickX = (dx / distance).toDouble()
+            touchControls.stickY = (dy / distance).toDouble()
+            touchControls.aimOnly = true
+            touchControls.snapAim = true
             knobX = 0f
             knobY = 0f
             return true
@@ -1808,14 +1830,30 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                         y > controlViewport.bottom - max(210f, controlViewport.height() * .38f)
                 ) {
                     firePointer = pointer
-                    input.fire = true
-                    fireHeld = true
+                    fireTouchX = x
+                    fireTouchY = y
+                    fireAim = null
+                    fireTouchCenter = hypot(x - fireX, y - fireY) <= 22f
+                    touchControls.fire = !fireTouchCenter
+                    fireHeld = !fireTouchCenter
                 }
             }
             MotionEvent.ACTION_MOVE -> {
                 val target = event.findPointerIndex(aimPointer)
                 val stick = event.findPointerIndex(stickPointer)
                 if (target >= 0) aim(target) else if (stick >= 0) update(stick)
+                val fire = event.findPointerIndex(firePointer)
+                if (fire >= 0) {
+                    val dx = event.getX(fire) / density - fireTouchX
+                    val dy = event.getY(fire) / density - fireTouchY
+                    val distance = hypot(dx, dy)
+                    if (distance.isFinite() && distance >= 8f) {
+                        fireAim = (dx / distance).toDouble() to (dy / distance).toDouble()
+                        val scale = min(1f, 24f / distance)
+                        fireCrosshairX = dx * scale
+                        fireCrosshairY = dy * scale
+                    }
+                }
             }
             MotionEvent.ACTION_UP,
             MotionEvent.ACTION_POINTER_UP -> {
@@ -1824,14 +1862,30 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                     stickPointer = -1
                     knobX = 0f
                     knobY = 0f
-                    if (!input.snapAim) {
-                        input.stickX = 0.0
-                        input.stickY = 0.0
+                    if (!touchControls.snapAim) {
+                        touchControls.stickX = 0.0
+                        touchControls.stickY = 0.0
                     }
                 }
                 if (pointer == firePointer) {
+                    val tap = fireTouchCenter && fireAim == null
+                    fireAim?.let { (x, y) ->
+                        if (stickPointer < 0 && aimPointer < 0) {
+                            touchControls.stickX = x
+                            touchControls.stickY = y
+                            touchControls.aimOnly = true
+                            touchControls.snapAim = true
+                        }
+                    }
+                    fireAim = null
                     firePointer = -1
-                    input.fire = false
+                    fireCrosshairX = 0f
+                    fireCrosshairY = 0f
+                    if (tap) {
+                        touchControls.fire = true
+                        onInput?.invoke(input.copy())
+                    }
+                    touchControls.fire = false
                     fireHeld = false
                 }
                 if (action == MotionEvent.ACTION_UP) performClick()
@@ -1861,20 +1915,20 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         if (frozenTime != null || !keyboardInputEnabled) return false
         when (code) {
             KeyEvent.KEYCODE_W,
-            KeyEvent.KEYCODE_DPAD_UP -> input.forward = down
+            KeyEvent.KEYCODE_DPAD_UP -> touchControls.forward = down
             KeyEvent.KEYCODE_S,
-            KeyEvent.KEYCODE_DPAD_DOWN -> input.reverse = down
+            KeyEvent.KEYCODE_DPAD_DOWN -> touchControls.reverse = down
             KeyEvent.KEYCODE_A,
-            KeyEvent.KEYCODE_DPAD_LEFT -> input.left = down
+            KeyEvent.KEYCODE_DPAD_LEFT -> touchControls.left = down
             KeyEvent.KEYCODE_D,
-            KeyEvent.KEYCODE_DPAD_RIGHT -> input.right = down
+            KeyEvent.KEYCODE_DPAD_RIGHT -> touchControls.right = down
             KeyEvent.KEYCODE_SPACE -> {
-                input.fire = down
+                touchControls.fire = down
                 fireHeld = down
             }
             else -> return false
         }
-        input.touchAim = false
+        touchControls.touchAim = false
         onInput?.invoke(input.copy())
         return true
     }

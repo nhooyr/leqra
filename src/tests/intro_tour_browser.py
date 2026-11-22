@@ -550,7 +550,7 @@ def check_mouse_preferences(browser, url, width, height, touch, screenshot_dir=N
         advance_drive_practice(page, touch)
         check_fire_tour(page, touch)
         if touch:
-            tip = page.locator('#introTourTouchFire').get_by_text("Tap or hold the Fire button.", exact=True)
+            tip = page.locator('#introTourTouchFire').get_by_text("Drag the center of Fire to aim without shooting. Tap the center to shoot on release, or hold the outer area for continuous fire.", exact=True)
         else:
             tip = page.locator('#introTourKeyboardFire .intro-fire-tip')
             expect(tip).to_have_text(tip_text)

@@ -3,6 +3,24 @@ import XCTest
 @testable import leqraCore
 
 final class LocalInputSourcesTests: XCTestCase {
+    func testFireDragAimsInPlaceWithoutChangingOtherHeldSources() {
+        var sources = LocalInputSources()
+        sources.touch = GameInput(fire: true, stickX: 1)
+        sources.keyboard.forward = true
+        sources.fireAim = BeamPoint(x: 0, y: -1)
+        let aimed = sources.input
+        XCTAssertTrue(aimed.fire)
+        XCTAssertTrue(aimed.aimOnly)
+        XCTAssertTrue(aimed.snapAim)
+        XCTAssertEqual(aimed.stickX, 0)
+        XCTAssertEqual(aimed.stickY, -1)
+        sources.fireAim = nil
+        XCTAssertEqual(sources.input.stickX, 1)
+        XCTAssertTrue(sources.input.forward)
+        sources.fireAim = BeamPoint(x: 1, y: 0)
+        sources.reset()
+        XCTAssertNil(sources.fireAim)
+    }
     func testKeyboardAndMouseCombineWithoutMovingTheTouchSeat() {
         let p1 = LocalInputSources()
         var p2 = LocalInputSources()

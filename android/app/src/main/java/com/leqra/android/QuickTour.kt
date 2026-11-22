@@ -39,7 +39,8 @@ internal class QuickTour(
         listOf(
             "Drive and aim" to
                 "Drag the left stick to drive. Touch near your tank to aim without moving.",
-            "Fire" to "Hold the right Fire button to shoot a round.",
+            "Fire" to
+                "Drag the center of Fire to aim without shooting. Tap the center to shoot on release, or hold the outer area for continuous fire.",
             "Score a point" to "Destroy the stationary tank to score a point.",
         )
     private var page = 0

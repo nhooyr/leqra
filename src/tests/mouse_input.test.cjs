@@ -42,7 +42,14 @@ function eventTarget() {
       remove: (c) => classes.delete(c),
       contains: (c) => classes.has(c),
     },
-    style: {},
+    style: {
+      setProperty(key, value) {
+        this[key] = String(value)
+      },
+      getPropertyValue(key) {
+        return this[key] || ""
+      },
+    },
     getBoundingClientRect() {
       return { left: 0, top: 0, width: 500, height: 500 }
     },

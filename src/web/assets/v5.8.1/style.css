@@ -856,6 +856,7 @@ kbd {
   stroke: currentColor;
   stroke-width: 1.8;
   stroke-linecap: round;
+  translate: var(--fire-aim-x, 0px) var(--fire-aim-y, 0px);
 }
 .fire-button.held {
   background: var(--accent-shade);

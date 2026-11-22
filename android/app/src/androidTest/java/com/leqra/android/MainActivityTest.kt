@@ -202,7 +202,7 @@ class MainActivityTest {
             val instructions =
                 listOf(
                     "Drag the left stick to drive. Touch near your tank to aim without moving.",
-                    "Hold the right Fire button to shoot a round.",
+                    "Drag the center of Fire to aim without shooting. Tap the center to shoot on release, or hold the outer area for continuous fire.",
                     "Destroy the stationary tank to score a point.",
                 )
             fun point(name: String): Float =
@@ -973,7 +973,7 @@ class MainActivityTest {
                 session.selectMode("elimination")
                 invoke("showControls")
                 assertFalse(text().contains("Power-ups can stack"))
-                assertTrue(text().contains("Hold the right Fire button to shoot"))
+                assertTrue(text().contains("Drag the center of Fire to aim without shooting"))
                 invoke("dismissDialog")
                 invoke("showRules")
                 panelViews()
@@ -1095,9 +1095,10 @@ class MainActivityTest {
                         .apply { isAccessible = true }
                         .get(activity) as AlertDialog
                 assertTrue(
-                    "Hold-to-fire instructions remain in Controls",
+                    "Center aiming and continuous firing instructions remain in Controls",
                     descendants(dialog.window!!.decorView).filterIsInstance<TextView>().any {
-                        it.text.contains("Hold the right Fire button")
+                        it.text.contains("Drag the center of Fire") &&
+                            it.text.contains("outer area for continuous fire")
                     },
                 )
             }
@@ -1602,7 +1603,7 @@ class MainActivityTest {
                                 now,
                                 now,
                                 action,
-                                point("fireX"),
+                                point("fireX") + 30 * view.resources.displayMetrics.density,
                                 point("fireY"),
                                 0,
                             )
@@ -1906,7 +1907,7 @@ class MainActivityTest {
                             downTime,
                             now,
                             action,
-                            coordinate("fireX"),
+                            coordinate("fireX") + 30 * view.resources.displayMetrics.density,
                             coordinate("fireY"),
                             0,
                         )
@@ -1976,7 +1977,7 @@ class MainActivityTest {
                         .java
                         .getDeclaredField("fireX")
                         .apply { isAccessible = true }
-                        .getFloat(view) * density
+                        .getFloat(view) * density + 30 * density
                 val y =
                     NativeArenaView::class
                         .java
@@ -2028,6 +2029,117 @@ class MainActivityTest {
             }
         } finally {
             main { activity.finish() }
+        }
+    }
+
+    @Test
+    fun fireDragAimsInPlaceInBothLayouts() {
+        for (mode in listOf("infinity", "elimination")) {
+            val activity = launch()
+            try {
+                main {
+                    val session = state(activity)
+                    session.publicSelected = false
+                    session.botCount = 0
+                    session.selectMode(mode)
+                    session.play()
+                }
+                awaitPlaying(activity)
+                SystemClock.sleep(250)
+                main {
+                    val session = state(activity)
+                    val view =
+                        MainActivity::class.java.getDeclaredField("arena").run {
+                            isAccessible = true
+                            get(activity) as NativeArenaView
+                        }
+                    val observed = mutableListOf<Boolean>()
+                    val originalInput = view.onInput
+                    view.onInput = { input ->
+                        observed += input.fire
+                        originalInput?.invoke(input)
+                    }
+                    val density = view.resources.displayMetrics.density
+                    fun coordinate(name: String) =
+                        NativeArenaView::class.java.getDeclaredField(name).run {
+                            isAccessible = true
+                            getFloat(view) * density
+                        }
+                    val x = coordinate("fireX")
+                    val y = coordinate("fireY")
+                    fun touch(action: Int, dx: Float = 0f, dy: Float = 0f) {
+                        val now = SystemClock.uptimeMillis()
+                        val event =
+                            MotionEvent.obtain(
+                                now,
+                                now,
+                                action,
+                                x + dx * density,
+                                y + dy * density,
+                                0,
+                            )
+                        try {
+                            assertTrue(view.onTouchEvent(event))
+                        } finally {
+                            event.recycle()
+                        }
+                    }
+                    touch(MotionEvent.ACTION_DOWN)
+                    touch(MotionEvent.ACTION_MOVE, 7f)
+                    assertFalse(session.input.snapAim)
+                    touch(MotionEvent.ACTION_MOVE, 0f, -32f)
+                    assertFalse(session.input.fire)
+                    assertTrue(session.input.aimOnly)
+                    assertTrue(session.input.snapAim)
+                    assertEquals(0.0, session.input.stickX, .001)
+                    assertEquals(-1.0, session.input.stickY, .001)
+                    assertEquals(-24f, coordinate("fireCrosshairY") / density, .001f)
+                    val bitmap =
+                        Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+                    try {
+                        view.draw(android.graphics.Canvas(bitmap))
+                        assertEquals(
+                            0xff32c5ff.toInt(),
+                            bitmap.getPixel(x.toInt(), (y - 24 * density).toInt()),
+                        )
+                        assertNotEquals(0xff32c5ff.toInt(), bitmap.getPixel(x.toInt(), y.toInt()))
+                    } finally {
+                        bitmap.recycle()
+                    }
+                    touch(MotionEvent.ACTION_MOVE)
+                    assertEquals(-1.0, session.input.stickY, .001)
+                    touch(MotionEvent.ACTION_UP)
+                    assertFalse(session.input.fire)
+                    assertEquals(0f, coordinate("fireCrosshairX"), .001f)
+                    assertEquals(0f, coordinate("fireCrosshairY"), .001f)
+                    assertEquals(-1.0, session.input.stickY, .001)
+                    assertFalse("Center dragging never sends a fire edge", observed.any { it })
+                    observed.clear()
+                    touch(MotionEvent.ACTION_DOWN)
+                    touch(MotionEvent.ACTION_UP)
+                    assertEquals(
+                        "A center tap sends one fire edge on release",
+                        listOf(false, true, false),
+                        observed,
+                    )
+                    touch(MotionEvent.ACTION_DOWN)
+                    touch(MotionEvent.ACTION_MOVE, -32f)
+                    touch(MotionEvent.ACTION_CANCEL)
+                    assertFalse(session.input.fire)
+                    assertFalse(session.input.snapAim)
+                    assertEquals(0.0, session.input.stickX, .001)
+                    assertEquals(0.0, session.input.stickY, .001)
+                    touch(MotionEvent.ACTION_DOWN, 32f)
+                    assertTrue(session.input.fire)
+                    touch(MotionEvent.ACTION_MOVE, 32f, -32f)
+                    assertTrue(session.input.fire)
+                    assertTrue(session.input.snapAim)
+                    touch(MotionEvent.ACTION_UP, 32f, -32f)
+                    assertFalse(session.input.fire)
+                }
+            } finally {
+                main { activity.finish() }
+            }
         }
     }
 

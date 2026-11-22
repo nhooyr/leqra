@@ -14,6 +14,19 @@
     MACHINE_CAPACITY = 115,
     DIRECTION_TURN = 5.8,
     TOUCH_TURN_ASSIST = 3.2
+  function fireAimDirection(dx, dy) {
+    const distance = Math.hypot(dx, dy)
+    return Number.isFinite(distance) && distance >= 8 ? { x: dx / distance, y: dy / distance } : null
+  }
+  function fireAimCenter(dx, dy) {
+    return Math.hypot(dx, dy) <= 22
+  }
+  function fireAimOffset(dx, dy, reach = 24) {
+    const distance = Math.hypot(dx, dy)
+    if (!Number.isFinite(distance) || distance === 0) return { x: 0, y: 0 }
+    const scale = Math.min(1, Math.max(0, reach) / distance)
+    return { x: dx * scale, y: dy * scale }
+  }
   // Resolve only a phased projectile's initial overlap. Ordinary ray sweeps
   // still ignore origins inside geometry; cover never becomes penetrable.
   function wallLaunch(x, y, ux, uy, radius, muzzle, walls, clearBounds) {
@@ -1665,6 +1678,9 @@
     }
   }
   return Object.freeze({
+    fireAimDirection,
+    fireAimCenter,
+    fireAimOffset,
     barrelRetraction,
     wallLaunch,
     expandMachineBullets,
