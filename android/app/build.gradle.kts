@@ -76,7 +76,9 @@ android {
         minSdk = 26
         targetSdk = 36
         versionName = releaseVersion
-        versionCode = parts[0] * 1000000 + parts[1] * 10000 + parts[2]
+        // Keep the v5 -> v0 rename upgradeable and skip codes already used through 5090003.
+        // This offset is permanent: v0.9.3 uses 5090004, and v1 starts at 6000001.
+        versionCode = (parts[0] + 5) * 1000000 + parts[1] * 10000 + parts[2] + 1
         buildConfigField("String", "GAME_VERSION", "\"$releaseVersion\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

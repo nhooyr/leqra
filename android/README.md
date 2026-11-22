@@ -40,8 +40,11 @@ version in `../src/main.go`. Android and an updated server can use different
 releases while both support the same game protocol epoch.
 The packaged version name and network handshakes use the complete version,
 including its `v` prefix and any suffix (for example, `v5.8.1-dev`). The numeric
-version code uses only the major, minor, and patch numbers. Play Console's editable
-release name is separate from the bundle metadata. Set it to `v5.7.3` when
+version code uses the major, minor, and patch numbers with a permanent 5,000,001
+offset to preserve upgrades from releases before the v5-to-v0 rename and skip
+codes already used through `5090003`. `v0.9.3` uses `5090004`, `v0.9.4` will use
+`5090005`, and `v1.0.0` will use `6000001`. Do not remove or reset this offset.
+Play Console's editable release name is separate from the bundle metadata. Set it to `v5.7.3` when
 preparing that release if the console's suggestion includes the numeric code.
 
 The build uses Gradle 9.9.2 and Android Gradle Plugin 9.5.1. The app uses the

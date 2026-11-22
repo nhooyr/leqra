@@ -1,6 +1,6 @@
 ;(() => {
   "use strict"
-  const VERSION = "v0.9.2"
+  const VERSION = "v0.9.3"
   const webOrigin = ["http:", "https:"].includes(location.protocol)
   let serviceWorker = null
   try {

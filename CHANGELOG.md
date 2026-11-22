@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.9.3
+
+- Preserve Android's version-code sequence across the v5-to-v0 rename so existing installations can upgrade.
+
 ## v0.9.2
 
 - ***important***: Reset major version number. Should never have been incremented.

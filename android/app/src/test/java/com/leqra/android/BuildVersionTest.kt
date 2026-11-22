@@ -16,7 +16,14 @@ class BuildVersionTest {
         assertEquals(version, BuildConfig.VERSION_NAME)
         assertEquals(version, BuildConfig.GAME_VERSION)
         val parts = version.removePrefix("v").substringBefore('-').split('.').map(String::toInt)
-        assertEquals(parts[0] * 1000000 + parts[1] * 10000 + parts[2], BuildConfig.VERSION_CODE)
+        assertEquals(
+            (parts[0] + 5) * 1000000 + parts[1] * 10000 + parts[2] + 1,
+            BuildConfig.VERSION_CODE,
+        )
+        assertTrue(
+            "New builds must skip version codes already used through 5090003",
+            BuildConfig.VERSION_CODE > 5_090_003,
+        )
         assertTrue(
             Regex("(?m)^\\s*version\\s*=\\s*\"${Regex.escape(version)}\"")
                 .containsMatchIn(File(root, "src/main.go").readText()),
