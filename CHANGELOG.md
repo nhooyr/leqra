@@ -1,6 +1,8 @@
 # Changelog
 
-## v5.9.1 (Unreleased)
+## v0.9.2
+
+- ***important***: Reset major version number. Should never have been incremented.
 
 - Aim from the Fire button's center as soon as it is pressed, so the first shot follows the press direction on mobile web, iOS, and Android.
 - Move the mobile ammunition, weapon, and readiness status below the top header on web, iOS, and Android, keeping it clear of the touch controls with matching borders above and below.
