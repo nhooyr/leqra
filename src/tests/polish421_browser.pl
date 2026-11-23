@@ -11,54 +11,132 @@ use FindBin;
 use lib "$FindBin::Bin/lib";
 use Leqra::Browser;
 
-my ($assets, $b, $c, $checks, $errors, $html, $i, $js, $out, $p, $pw, $report, $root, $web);
+my ( $assets, $b, $c, $checks, $errors, $html, $i, $js, $out, $p, $pw, $report, $root, $web );
+
 # v4.21 audio-volume and Safari async-audio regression checks.
-$root = path($0)->absolute->parent(2);
-$web = $root->child('web');
+$root   = path($0)->absolute->parent(2);
+$web    = $root->child('web');
 $assets = asset_directory($web);
-$out = $root->child('tests/results/v4.22-audio');
+$out    = $root->child('tests/results/v4.22-audio');
 $out->mkpath;
-$html = replace_text(replace_re('<link[^>]*>|<script[^>]*src=[^>]*></script>', '', $web->child('index.html')->slurp_utf8), '</head>', ((('<style>' . $assets->child('theme.css')->slurp_utf8) . $assets->child('style.css')->slurp_utf8) . '</style></head>'));
-$js = replace_text($assets->child('game.js')->slurp_utf8, '(() => {', '((location,history) => {', 1);
-$i = rindex($js, '})()');
-$js = ((substr($js, 0, $i - 0) . '})(window.__location,window.__history);') . substr($js, ($i + 4)));
+$html = replace_text(
+    replace_re( '<link[^>]*>|<script[^>]*src=[^>]*></script>', '', $web->child('index.html')->slurp_utf8 ),
+    '</head>',
+    (
+        ( ( '<style>' . $assets->child('theme.css')->slurp_utf8 ) . $assets->child('style.css')->slurp_utf8 )
+        . '</style></head>'
+    )
+);
+$js = replace_text( $assets->child('game.js')->slurp_utf8, '(() => {', '((location,history) => {', 1 );
+$i  = rindex( $js, '})()' );
+$js =
+  ( ( substr( $js, 0, $i - 0 ) . '})(window.__location,window.__history);' ) . substr( $js, ( $i + 4 ) ) );
 $checks = [];
 $errors = [];
+
 sub check {
-    my ($ok, $label) = @_;
-    assert_ok($ok, $label);
-    push(@{$checks}, $label);
-    print(join(" ", 'PASS', $label), "\n");
+    my ( $ok, $label ) = @_;
+    assert_ok( $ok, $label );
+    push( @{$checks}, $label );
+    print( join( " ", 'PASS', $label ), "\n" );
 }
 $pw = start_playwright();
 my $playwright = $pw;
-$b = $pw->launch(type => 'chrome', headless => JSON::PP::true, executablePath => '/usr/bin/chromium');
-$c = $b->newContext({viewport => {'width' => 1100, 'height' => 820}});
+$b = $pw->launch(
+    type           => 'chrome',
+    headless       => JSON::PP::true,
+    executablePath => '/usr/bin/chromium'
+);
+$c = $b->newContext( { viewport => { 'width' => 1100, 'height' => 820 } } );
 $p = $c->newPage();
-capture_event($p, 'pageerror', $errors, '(e) => String(e)');
+capture_event( $p, 'pageerror', $errors, '(e) => String(e)' );
 $p->setContent($html);
-evaluate_js($p, '()=>{window.__location=new URL(\'http://127.0.0.1/?test=1\');window.__history={state:null,replaceState(){}};const d={};const store={getItem:k=>Object.hasOwn(d,k)?d[k]:null,setItem:(k,v)=>d[k]=String(v),removeItem:k=>delete d[k]};Object.defineProperty(window,\'localStorage\',{value:store});Object.defineProperty(window,\'sessionStorage\',{value:store});window.__stored=d;window.__audioStarts=0;window.__masterLevels=[];class FakeAudioContext{constructor(){this.state=\'suspended\';this.currentTime=0;this.sampleRate=48000;this.destination={};this.gains=0;}resume(){return new Promise(r=>setTimeout(()=>{this.state=\'running\';r();},25));}createGain(){const idx=this.gains++;return{gain:{value:1,setValueAtTime:(v)=>{if(idx===0)window.__masterLevels.push(v)},linearRampToValueAtTime(){},exponentialRampToValueAtTime(){}},connect(){}}}createOscillator(){return{type:\'sine\',frequency:{setValueAtTime(){},exponentialRampToValueAtTime(){}},connect(){},start(){window.__audioStarts++},stop(){}}}createBuffer(){return{getChannelData(){return new Float32Array(16)}}}createBufferSource(){return{buffer:null,connect(){},start(){window.__audioStarts++}}}createBiquadFilter(){return{type:\'\',frequency:{value:0},connect(){}}}}window.AudioContext=FakeAudioContext;window.webkitAudioContext=FakeAudioContext;}');
-$p->addScriptTag({content => $assets->child('theme.js')->slurp_utf8});
-$p->addScriptTag({content => $assets->child('netcode.js')->slurp_utf8});
-$p->addScriptTag({content => $js});
-wait_js($p, 'window.__test&&leqra.version===\'4.35.0\'');
-main::check((do { my $boolean_value = (value_eq($p->locator('#masterVolume')->inputValue(), '50')); truth_value($boolean_value) ? (value_eq($p->locator('#masterVolumeValue')->innerText(), '50%')) : $boolean_value }), 'Default/current audio volume is centered at 50%');
-evaluate_js($p, 'window.__audioStarts=0;__test.chatNotificationSound()');
-main::check((value_eq(evaluate_js($p, 'window.__audioStarts'), 0)), 'Suspended Safari-style AudioContext does not falsely report immediate playback');
-$Leqra::Browser::HANDLE->await($p->waitForTimeout(60));
-main::check((do { my $boolean_value = ((evaluate_js($p, 'window.__audioStarts') >= 2)); truth_value($boolean_value) ? (value_eq(evaluate_js($p, '__test.audioState'), 'running')) : $boolean_value }), 'Queued sound begins after asynchronous AudioContext resume completes');
+evaluate_js( $p,
+'()=>{window.__location=new URL(\'http://127.0.0.1/?test=1\');window.__history={state:null,replaceState(){}};const d={};const store={getItem:k=>Object.hasOwn(d,k)?d[k]:null,setItem:(k,v)=>d[k]=String(v),removeItem:k=>delete d[k]};Object.defineProperty(window,\'localStorage\',{value:store});Object.defineProperty(window,\'sessionStorage\',{value:store});window.__stored=d;window.__audioStarts=0;window.__masterLevels=[];class FakeAudioContext{constructor(){this.state=\'suspended\';this.currentTime=0;this.sampleRate=48000;this.destination={};this.gains=0;}resume(){return new Promise(r=>setTimeout(()=>{this.state=\'running\';r();},25));}createGain(){const idx=this.gains++;return{gain:{value:1,setValueAtTime:(v)=>{if(idx===0)window.__masterLevels.push(v)},linearRampToValueAtTime(){},exponentialRampToValueAtTime(){}},connect(){}}}createOscillator(){return{type:\'sine\',frequency:{setValueAtTime(){},exponentialRampToValueAtTime(){}},connect(){},start(){window.__audioStarts++},stop(){}}}createBuffer(){return{getChannelData(){return new Float32Array(16)}}}createBufferSource(){return{buffer:null,connect(){},start(){window.__audioStarts++}}}createBiquadFilter(){return{type:\'\',frequency:{value:0},connect(){}}}}window.AudioContext=FakeAudioContext;window.webkitAudioContext=FakeAudioContext;}'
+);
+$p->addScriptTag( { content => $assets->child('theme.js')->slurp_utf8 } );
+$p->addScriptTag( { content => $assets->child('netcode.js')->slurp_utf8 } );
+$p->addScriptTag( { content => $js } );
+wait_js( $p, 'window.__test&&leqra.version===\'4.35.0\'' );
+main::check(
+    (
+        do {
+            my $boolean_value =
+              ( value_eq( $p->locator('#masterVolume')->inputValue(), '50' ) );
+            truth_value($boolean_value)
+              ? ( value_eq( $p->locator('#masterVolumeValue')->innerText(), '50%' ) )
+              : $boolean_value;
+        }
+    ),
+    'Default/current audio volume is centered at 50%'
+);
+evaluate_js( $p, 'window.__audioStarts=0;__test.chatNotificationSound()' );
+main::check( ( value_eq( evaluate_js( $p, 'window.__audioStarts' ), 0 ) ),
+    'Suspended Safari-style AudioContext does not falsely report immediate playback' );
+$Leqra::Browser::HANDLE->await( $p->waitForTimeout(60) );
+main::check(
+    (
+        do {
+            my $boolean_value =
+              ( ( evaluate_js( $p, 'window.__audioStarts' ) >= 2 ) );
+            truth_value($boolean_value)
+              ? ( value_eq( evaluate_js( $p, '__test.audioState' ), 'running' ) )
+              : $boolean_value;
+        }
+    ),
+    'Queued sound begins after asynchronous AudioContext resume completes'
+);
 $p->locator('#roomControlsBtn')->click();
-wait_js($p, 'document.querySelector(\'#controlsDialog\').open');
-evaluate_js($p->locator('#masterVolume'), 'e=>{e.value=\'53\';e.dispatchEvent(new Event(\'input\',{bubbles:true}))}');
-main::check((do { my $boolean_value = (value_eq($p->locator('#masterVolume')->inputValue(), '50')); truth_value($boolean_value) ? (value_eq(evaluate_js($p, '__test.audioVolume'), 50)) : $boolean_value }), 'Volume slider snaps to the halfway point near 50%');
-evaluate_js($p->locator('#masterVolume'), 'e=>{e.value=\'67\';e.dispatchEvent(new Event(\'input\',{bubbles:true}));e.dispatchEvent(new Event(\'change\',{bubbles:true}))}');
-main::check((do { my $boolean_value = (value_eq($p->locator('#masterVolume')->inputValue(), '67')); truth_value($boolean_value) ? do { my $boolean_value = (value_eq($p->locator('#masterVolumeValue')->innerText(), '67%')); truth_value($boolean_value) ? (value_eq(evaluate_js($p, 'window.__stored[\'leqra.volume\']'), '67')) : $boolean_value } : $boolean_value }), 'Volume changes live and persist on this device');
-evaluate_js($p, '__test.setAudioVolume(100,false,false)');
-main::check(((abs((evaluate_js($p, 'window.__masterLevels.at(-1)') - 2)) < 1e-09)), '100% volume scales above the original midpoint while 50% preserves the old level');
-main::check((!truth_value($errors)), ('No uncaught browser errors in audio controls: ' . format_value($errors)));
-$p->screenshot({path => format_value($out->child('controls-volume.png'))});
+wait_js( $p, 'document.querySelector(\'#controlsDialog\').open' );
+evaluate_js( $p->locator('#masterVolume'),
+    'e=>{e.value=\'53\';e.dispatchEvent(new Event(\'input\',{bubbles:true}))}' );
+main::check(
+    (
+        do {
+            my $boolean_value =
+              ( value_eq( $p->locator('#masterVolume')->inputValue(), '50' ) );
+            truth_value($boolean_value)
+              ? ( value_eq( evaluate_js( $p, '__test.audioVolume' ), 50 ) )
+              : $boolean_value;
+        }
+    ),
+    'Volume slider snaps to the halfway point near 50%'
+);
+evaluate_js( $p->locator('#masterVolume'),
+'e=>{e.value=\'67\';e.dispatchEvent(new Event(\'input\',{bubbles:true}));e.dispatchEvent(new Event(\'change\',{bubbles:true}))}'
+);
+main::check(
+    (
+        do {
+            my $boolean_value =
+              ( value_eq( $p->locator('#masterVolume')->inputValue(), '67' ) );
+            truth_value($boolean_value)
+              ? do {
+                my $boolean_value = ( value_eq( $p->locator('#masterVolumeValue')->innerText(), '67%' ) );
+                truth_value($boolean_value)
+                  ? ( value_eq( evaluate_js( $p, 'window.__stored[\'leqra.volume\']' ), '67' ) )
+                  : $boolean_value;
+              }
+              : $boolean_value;
+        }
+    ),
+    'Volume changes live and persist on this device'
+);
+evaluate_js( $p, '__test.setAudioVolume(100,false,false)' );
+main::check(
+    ( ( abs( ( evaluate_js( $p, 'window.__masterLevels.at(-1)' ) - 2 ) ) < 1e-09 ) ),
+    '100% volume scales above the original midpoint while 50% preserves the old level'
+);
+main::check( ( !truth_value($errors) ),
+    ( 'No uncaught browser errors in audio controls: ' . format_value($errors) ) );
+$p->screenshot( { path => format_value( $out->child('controls-volume.png') ) } );
 $c->close();
 $b->close();
-$report = {'version' => '4.35.0', 'passed' => scalar(@{$checks}), 'checks' => $checks, 'errors' => $errors};
-$out->child('results.json')->spew_utf8(json_text($report, 1));
-print(join(" ", 'TOTAL', scalar(@{$checks})), "\n");
+$report = {
+    'version' => '4.35.0',
+    'passed'  => scalar( @{$checks} ),
+    'checks'  => $checks,
+    'errors'  => $errors
+};
+$out->child('results.json')->spew_utf8( json_text( $report, 1 ) );
+print( join( " ", 'TOTAL', scalar( @{$checks} ) ), "\n" );

@@ -3,7 +3,9 @@ use strict;
 use warnings;
 use Exporter 'import';
 our @EXPORT_OK = qw(ordered_delay_script);
-sub ordered_delay_script { return <<'JAVASCRIPT';
+
+sub ordered_delay_script {
+    return <<'JAVASCRIPT';
 (()=>{
  window.__lag={base:60,jitter:[0,45,8,27,65,2,30,12],enabled:true};
  window.__sockets=[];const Native=window.WebSocket;

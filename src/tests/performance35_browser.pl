@@ -11,46 +11,99 @@ use FindBin;
 use lib "$FindBin::Bin/lib";
 use Leqra::Browser;
 
-my ($assets, $b, $c, $count, $counts, $errors, $frames, $html, $i, $js, $n, $nodes, $out, $p, $prof, $pw, $report, $root, $s, $top, $web, $x);
+my (
+    $assets, $b,   $c, $count, $counts, $errors, $frames, $html, $i,   $js,  $n,
+    $nodes,  $out, $p, $prof,  $pw,     $report, $root,   $s,    $top, $web, $x
+);
+
 # Usage: perl tests/performance35_browser.pl PROJECT_ROOT OUTPUT [4|8]. Optional Playwright/Chromium.
 # Exact assets injected; local simulation only.
-$count = (truth_value(((scalar(@{[ $0, @ARGV ]}) > 3))) ? int([ $0, @ARGV ]->[3]) : 4);
-$root = path([ $0, @ARGV ]->[1]);
-$out = path([ $0, @ARGV ]->[2]);
+$count = (
+    truth_value( ( ( scalar( @{ [ $0, @ARGV ] } ) > 3 ) ) )
+    ? int( [ $0, @ARGV ]->[3] )
+    : 4
+);
+$root = path( [ $0, @ARGV ]->[1] );
+$out  = path( [ $0, @ARGV ]->[2] );
 $out->mkpath;
 $pw = start_playwright();
 my $playwright = $pw;
-$b = $pw->launch(type => 'chrome', executablePath => '/usr/bin/chromium', headless => JSON::PP::true, args => ['--no-sandbox']);
-$p = $b->newPage({viewport => {'width' => 1365, 'height' => 950}});
+$b = $pw->launch(
+    type           => 'chrome',
+    executablePath => '/usr/bin/chromium',
+    headless       => JSON::PP::true,
+    args           => ['--no-sandbox']
+);
+$p      = $b->newPage( { viewport => { 'width' => 1365, 'height' => 950 } } );
 $errors = [];
-capture_event($p, 'pageerror', $errors, '(e) => String(e)');
-$web = $root->child('web');
+capture_event( $p, 'pageerror', $errors, '(e) => String(e)' );
+$web    = $root->child('web');
 $assets = asset_directory($web);
-$html = replace_text(replace_text(replace_text(replace_re('<link[^>]*>', '', $web->child('index.html')->slurp_utf8), '<script src="game.js" defer></script>', ''), '<script src="netcode.js" defer></script>', ''), '</head>', (('<style>' . $assets->child('style.css')->slurp_utf8) . '</style></head>'));
+$html   = replace_text(
+    replace_text(
+        replace_text(
+            replace_re( '<link[^>]*>', '', $web->child('index.html')->slurp_utf8 ),
+            '<script src="game.js" defer></script>', ''
+        ),
+        '<script src="netcode.js" defer></script>',
+        ''
+    ),
+    '</head>',
+    ( ( '<style>' . $assets->child('style.css')->slurp_utf8 ) . '</style></head>' )
+);
 $p->setContent($html);
-evaluate_js($p, 'window.__location=new URL(\'http://game.test/?test=1\');const store={};Object.defineProperty(window,\'localStorage\',{value:{getItem:k=>store[k]||null,setItem:(k,v)=>store[k]=v,removeItem:k=>delete store[k]}});localStorage.setItem(\'leqra.muted\',\'1\');');
-$js = replace_text($assets->child('game.js')->slurp_utf8, '(() => {', '((location) => {', 1);
-$i = rindex($js, '})()');
-$js = ((substr($js, 0, $i - 0) . '})(window.__location);') . substr($js, ($i + 4)));
-$p->addScriptTag({content => $assets->child('netcode.js')->slurp_utf8});
-$p->addScriptTag({content => $js});
-wait_js($p, 'window.__test');
-evaluate_js($p, 'count=>{let seed=35;Math.random=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296};const T=__test;T.setLocalRules({...T.currentRules(),mode:\'koth\',mapSize:\'large\',teamMode:\'ffa\',timeLimit:600,scoreTarget:300});while(leqra.getState().room.players.length<count)T.addRoomSeat(\'bot\');}', $count);
+evaluate_js( $p,
+'window.__location=new URL(\'http://game.test/?test=1\');const store={};Object.defineProperty(window,\'localStorage\',{value:{getItem:k=>store[k]||null,setItem:(k,v)=>store[k]=v,removeItem:k=>delete store[k]}});localStorage.setItem(\'leqra.muted\',\'1\');'
+);
+$js = replace_text( $assets->child('game.js')->slurp_utf8, '(() => {', '((location) => {', 1 );
+$i  = rindex( $js, '})()' );
+$js = ( ( substr( $js, 0, $i - 0 ) . '})(window.__location);' ) . substr( $js, ( $i + 4 ) ) );
+$p->addScriptTag( { content => $assets->child('netcode.js')->slurp_utf8 } );
+$p->addScriptTag( { content => $js } );
+wait_js( $p, 'window.__test' );
+evaluate_js(
+    $p,
+'count=>{let seed=35;Math.random=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296};const T=__test;T.setLocalRules({...T.currentRules(),mode:\'koth\',mapSize:\'large\',teamMode:\'ffa\',timeLimit:600,scoreTarget:300});while(leqra.getState().room.players.length<count)T.addRoomSeat(\'bot\');}',
+    $count
+);
 $p->locator('#startRoomBtn')->click();
-wait_js($p, 'leqra.getState().phase==="playing"');
-evaluate_js($p, '()=>{__test.tanks.forEach(t=>t.invulnerable=999);window.__perfFrames=[];window.__mutations=0;let last=0;new MutationObserver(m=>__mutations+=m.length).observe(document.querySelector(\'.app\'),{subtree:true,attributes:true,characterData:true,childList:true});function f(now){if(last)__perfFrames.push(now-last);last=now;requestAnimationFrame(f);}requestAnimationFrame(f);}');
+wait_js( $p, 'leqra.getState().phase==="playing"' );
+evaluate_js( $p,
+'()=>{__test.tanks.forEach(t=>t.invulnerable=999);window.__perfFrames=[];window.__mutations=0;let last=0;new MutationObserver(m=>__mutations+=m.length).observe(document.querySelector(\'.app\'),{subtree:true,attributes:true,characterData:true,childList:true});function f(now){if(last)__perfFrames.push(now-last);last=now;requestAnimationFrame(f);}requestAnimationFrame(f);}'
+);
 $c = $p->context()->newCDPSession($p);
 $c->send('Profiler.enable');
 $c->send('Profiler.start');
-$Leqra::Browser::HANDLE->await($p->waitForTimeout(8000));
+$Leqra::Browser::HANDLE->await( $p->waitForTimeout(8000) );
 $prof = $c->send('Profiler.stop')->{'profile'};
-$out->child('cpu.json')->spew_utf8(json_text($prof));
-$counts = tally_values(($prof->{'samples'} // []));
-$nodes = {map { my $n = $_; $n->{'id'} => $n } @{$prof->{'nodes'}}};
-$top = [map { my ($i, $n) = @{$_}; [$nodes->{$i}->{'callFrame'}->{'functionName'}, ($nodes->{$i}->{'callFrame'}->{'lineNumber'} + 1), $n] } @{most_common($counts, 20)}];
-$frames = evaluate_js($p, '__perfFrames');
-$s = sorted_values($frames);
-$report = {'tank_count' => $count, 'map' => '12x10', 'scenario' => 'Seeded local KOTH; 8 second RAF + mutation + sampled CPU profile; invulnerable tanks (light combat).', 'frames' => scalar(@{$frames}), 'average_frame_ms' => (sum(@{$frames}) / scalar(@{$frames})), 'p95_frame_ms' => $s->[int((0.95 * scalar(@{$s})))], 'over_25ms' => sum(@{[map { my $x = $_; (($x > 25)) } @{$s}]}), 'dom_mutations' => evaluate_js($p, '__mutations'), 'cpu_top' => $top, 'errors' => $errors};
-$out->child('report.json')->spew_utf8(json_text($report, 1));
-print(join(" ", json_text($report, 1)), "\n");
+$out->child('cpu.json')->spew_utf8( json_text($prof) );
+$counts = tally_values( ( $prof->{'samples'} // [] ) );
+$nodes  = { map { my $n = $_; $n->{'id'} => $n } @{ $prof->{'nodes'} } };
+$top    = [
+    map {
+        my ( $i, $n ) = @{$_};
+        [
+            $nodes->{$i}->{'callFrame'}->{'functionName'},
+            ( $nodes->{$i}->{'callFrame'}->{'lineNumber'} + 1 ),
+            $n
+        ]
+    } @{ most_common( $counts, 20 ) }
+];
+$frames = evaluate_js( $p, '__perfFrames' );
+$s      = sorted_values($frames);
+$report = {
+    'tank_count' => $count,
+    'map'        => '12x10',
+    'scenario'   =>
+      'Seeded local KOTH; 8 second RAF + mutation + sampled CPU profile; invulnerable tanks (light combat).',
+    'frames'           => scalar( @{$frames} ),
+    'average_frame_ms' => ( sum( @{$frames} ) / scalar( @{$frames} ) ),
+    'p95_frame_ms'     => $s->[ int( ( 0.95 * scalar( @{$s} ) ) ) ],
+    'over_25ms'        => sum( @{ [ map { my $x = $_; ( ( $x > 25 ) ) } @{$s} ] } ),
+    'dom_mutations'    => evaluate_js( $p, '__mutations' ),
+    'cpu_top'          => $top,
+    'errors'           => $errors
+};
+$out->child('report.json')->spew_utf8( json_text( $report, 1 ) );
+print( join( " ", json_text( $report, 1 ) ), "\n" );
 $b->close();
