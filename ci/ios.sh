@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 
 ci_tmpdir=${RUNNER_TEMP:-${TMPDIR:-/tmp}}
 
-perl ci/ios-cache.pl restore "$ci_tmpdir/leqra-ios-inputs.json"
+swift -module-cache-path .build/swift-module-cache ci/ios-cache.swift restore "$ci_tmpdir/leqra-ios-inputs.json"
 
 simulator=$(perl ci/ios-simulator.pl)
 
@@ -25,4 +25,4 @@ xcodebuild -project ios/leqra.xcodeproj -scheme leqra \
 	COMPILATION_CACHE_CAS_PATH="$ci_tmpdir/leqra-ios/CompilationCache.noindex" \
 	CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= test
 
-perl ci/ios-cache.pl save "$ci_tmpdir/leqra-ios-inputs.json"
+swift -module-cache-path .build/swift-module-cache ci/ios-cache.swift save "$ci_tmpdir/leqra-ios-inputs.json"

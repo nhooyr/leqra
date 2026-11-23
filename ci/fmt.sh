@@ -9,7 +9,7 @@ fi
 
 npx prettier -w --print-width=110 --no-semi --bracket-same-line .
 shfmt -s -w .
-find ios \( -name .build -o -name .swiftpm -o -name DerivedData \) -prune -o -type f -name '*.swift' -exec swift-format format --in-place {} +
+find ios ci \( -name .build -o -name .swiftpm -o -name DerivedData \) -prune -o -type f -name '*.swift' -exec swift-format format --in-place {} +
 find android \( -name build -o -name .gradle -o -name .kotlin \) -prune -o -type f \( -name '*.kt' -o -name '*.kts' \) -exec ktfmt --kotlinlang-style {} +
 gofmt -s -w .
 

@@ -2,7 +2,9 @@
 
 Run from the repository root with Go 1.23+, Node.js, and Perl 5.34+.
 
-Install the JavaScript and Perl test dependencies first, using `cpanm`:
+With `cpanminus` installed, `./ci/lint.sh` and `./ci/web.sh` install their JavaScript and Perl dependencies automatically. Perl modules are kept in the ignored `.build/perl-<version>/` directory and reused on subsequent runs. Each installed Perl version gets its own directory; no shell configuration is needed. The lint script performs static checks without running the project tests or building the app.
+
+For the individual commands below, install the JavaScript and Perl test dependencies first, using `cpanm`:
 
 ```sh
 npm ci --ignore-scripts
@@ -25,6 +27,8 @@ Keep generated reports and screenshots local. Older raw results are available in
 ## Native CI checks
 
 `./ci/ios.sh` runs the Swift package tests in Release mode and the iPhone simulator smoke tests. It starts the newest installed standard iOS simulator while the package builds, disables indexing, and reuses compiler outputs. Cached source timestamps are restored only when file contents match, so changed inputs still rebuild.
+
+The iOS cache helper uses Swift's native macOS filesystem APIs to preserve nanosecond timestamps. It runs with the installed Swift toolchain and does not depend on Perl's optional `syscall` support.
 
 `./ci/android.sh` runs the core and app unit tests, Android lint, and debug app/test builds. It reuses installed SDK packages and installs any missing build requirements. With an emulator running, `./ci/android-smoke.sh` runs the same ten instrumented checks used by Actions. The tests continue to execute even when compilation is cached.
 
