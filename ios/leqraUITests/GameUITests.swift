@@ -172,6 +172,7 @@ final class GameUITests: XCTestCase {
     @MainActor
     func testDeathNoticeMatchesTankLabelsInPortraitAndLandscape() {
         for fixed in [false, true] {
+            XCUIDevice.shared.orientation = .portrait
             let app = XCUIApplication()
             app.launchArguments = [
                 "--probe-direct-aim", "--probe-death-notice", "--public-session-test-namespace",
@@ -179,6 +180,7 @@ final class GameUITests: XCTestCase {
             ]
             if fixed { app.launchArguments.append("--probe-fixed") }
             app.launch()
+            XCTAssertTrue(app.buttons["pauseGame"].waitForExistence(timeout: 15))
             for landscape in [false, true] {
                 XCUIDevice.shared.orientation = landscape ? .landscapeLeft : .portrait
                 waitForOrientation(app, landscape: landscape)
@@ -2798,10 +2800,21 @@ final class GameUITests: XCTestCase {
         guard stage.exists, !app.scrollViews["modalScroll"].exists else { return }
         let resized = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
-                (split.exists || (stage.frame.width > stage.frame.height) == landscape)
-                    && app.frame.contains(stage.frame)
+                guard stage.exists else { return false }
+                let frame = stage.frame
+                return (split.exists || (frame.width > frame.height) == landscape)
+                    && app.frame.contains(frame)
             }, object: stage)
-        XCTAssertEqual(XCTWaiter.wait(for: [resized], timeout: 10), .completed)
+        let result = XCTWaiter.wait(for: [resized], timeout: 10)
+        if result != .completed {
+            let stageExists = stage.exists
+            let frame = stageExists ? stage.frame : .zero
+            print(
+                "Orientation did not settle: landscape=\(landscape), app=\(app.frame), stageExists=\(stageExists), stage=\(frame), splitExists=\(split.exists)"
+            )
+            capture(app, name: "Orientation did not settle")
+        }
+        XCTAssertEqual(result, .completed)
     }
 
     @MainActor
