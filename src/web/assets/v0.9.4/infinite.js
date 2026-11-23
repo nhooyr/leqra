@@ -3230,6 +3230,24 @@
     session.arrived = now
     session.tanks = message.tanks.map((tank) => ({ ...tank, alive: tank.hp > 0 }))
     session.authorityTanks = new Map(session.tanks.map((tank) => [tank.id, tank]))
+    if (!session.spectating && (!session.room || session.public)) {
+      for (const [index, seat] of session.controllers.entries()) {
+        const tank = session.authorityTanks.get(seat.id)
+        if (
+          !tank ||
+          !Number.isInteger(tank.colorIndex) ||
+          tank.colorIndex < 0 ||
+          tank.colorIndex >= COLORS.length ||
+          session.previousTanks.get(seat.id)?.colorIndex === tank.colorIndex
+        )
+          continue
+        const key = index ? "localColorIndex" : "colorIndex"
+        if (session[key] !== tank.colorIndex) {
+          session[key] = tank.colorIndex
+          art.persistPilotColor?.(index, tank.colorIndex)
+        }
+      }
+    }
     acceptGodlikeSpawns(session, message, now)
     session.bullets = message.bullets.map((bullet) => ({
       ...bullet,

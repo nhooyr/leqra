@@ -1993,7 +1993,47 @@ internal class GameSession(context: Context) {
                     audioStateConnection = client.connectionGeneration
                     if (client.isPublic)
                         spawnNotices.accept(event.snapshot.godlikeSpawns, System.nanoTime() / 1e9)
+                    val previous = timeline.authoritativeSnapshot
                     timeline.accept(event.snapshot, System.nanoTime() / 1e9)
+                    if (client.isPublic && client.welcome?.spectating != true) {
+                        val accepted = timeline.authoritativeSnapshot
+                        val primary =
+                            GamePalette.changedPilotColor(
+                                previous?.tanks?.firstOrNull { it.id == localID }?.colorIndex,
+                                accepted?.tanks?.firstOrNull { it.id == localID }?.colorIndex,
+                            )
+                        val secondary = localID2?.let { id ->
+                            GamePalette.changedPilotColor(
+                                previous?.tanks?.firstOrNull { it.id == id }?.colorIndex,
+                                accepted?.tanks?.firstOrNull { it.id == id }?.colorIndex,
+                            )
+                        }
+                        if (primary != null || secondary != null) {
+                            if (
+                                primary != null && primary != colorIndex ||
+                                    secondary != null && secondary != localColorIndex
+                            ) {
+                                if (primary != null) colorIndex = primary
+                                if (secondary != null) localColorIndex = secondary
+                                prefs
+                                    .edit()
+                                    .putInt("color", colorIndex)
+                                    .putInt("localColor", localColorIndex)
+                                    .apply()
+                            }
+                            store
+                                .activeIntent()
+                                ?.takeIf { it.origin == server }
+                                ?.let { old ->
+                                    val updated =
+                                        old.copy(
+                                            colorIndex = primary ?: old.colorIndex,
+                                            localColorIndex = secondary ?: old.localColorIndex,
+                                        )
+                                    if (updated != old) store.setActiveIntent(updated)
+                                }
+                        }
+                    }
                     if (event.snapshot.spectating) followingID = event.snapshot.following
                     event.snapshot.world?.let { world ->
                         if (maze?.world !== world) maze = InfiniteMaze(world)

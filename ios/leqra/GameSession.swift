@@ -2701,14 +2701,18 @@ final class GameSession: ObservableObject {
                 if let server = baseURL, let credential = accountSession(for: server) {
                     _ = publicSessions.saveCallsign(own.name, credential: credential)
                 }
-                if let index = GamePalette.colors.firstIndex(of: own.color.lowercased()) {
+                if !publicIdentityActive,
+                    let index = GamePalette.colors.firstIndex(of: own.color.lowercased())
+                {
                     colorIndex = index
                 }
             }
             if let local = value.players.first(where: { $0.kind == "local" && $0.owner == welcome?.id }) {
                 localCallsign = local.name
                 committedCallsigns[1] = local.name
-                localP2ColorIndex = GamePalette.colors.firstIndex(of: local.color.lowercased()) ?? 1
+                if !publicIdentityActive {
+                    localP2ColorIndex = GamePalette.colors.firstIndex(of: local.color.lowercased()) ?? 1
+                }
                 localP2Team = local.team
                 if let server = baseURL, let credential = accountSession(for: server, seat: 1) {
                     _ = publicSessions.saveCallsign(local.name, credential: credential)
@@ -2763,10 +2767,26 @@ final class GameSession: ObservableObject {
             }
             if let fixed = snapshot.world { world = fixed }
             if timeline == nil { timeline = makeTimeline() }
+            let previous = timeline?.authoritativeSnapshot
             timeline?.accept(snapshot, at: ProcessInfo.processInfo.systemUptime)
             if let timeline, let accepted = timeline.authoritativeSnapshot {
                 cacheFireAuthority(
                     accepted, at: timeline.authoritativeSnapshotTime ?? ProcessInfo.processInfo.systemUptime)
+                if arena, publicIdentityActive, !spectating {
+                    for (seat, id) in [localID, secondaryLocalID ?? -1].enumerated() {
+                        let old = previous?.tanks.first(where: { $0.id == id })?.colorIndex
+                        let current = accepted.tanks.first(where: { $0.id == id })?.colorIndex
+                        guard let color = GamePalette.changedPilotColor(previous: old, current: current)
+                        else {
+                            continue
+                        }
+                        if seat == 0 {
+                            if colorIndex != color { colorIndex = color }
+                        } else if localP2ColorIndex != color {
+                            localP2ColorIndex = color
+                        }
+                    }
+                }
             }
             lastSnapshot = snapshot
             if publicIdentityActive, publicRecoveryPending,
@@ -2777,7 +2797,6 @@ final class GameSession: ObservableObject {
                 if let server = baseURL, let credential = accountSession(for: server) {
                     _ = publicSessions.saveCallsign(tank.name, credential: credential)
                 }
-                if colorIndex != tank.colorIndex { colorIndex = GamePalette.index(tank.colorIndex) }
             }
             if publicIdentityActive, publicRecoveryPending || publicScoreResetPending {
                 let recoveredPaused = publicRecoveryPending && paused
@@ -3180,7 +3199,9 @@ final class GameSession: ObservableObject {
         let readout = currentReadout
         scene.configureReadiness(label: readout.fireLabel, progress: readout.progress, locked: readout.locked)
         score = tank.score
-        if frameProfiler == nil { colorIndex = GamePalette.index(tank.colorIndex) }
+        if frameProfiler == nil, !publicIdentityActive, colorIndex != GamePalette.index(tank.colorIndex) {
+            colorIndex = GamePalette.index(tank.colorIndex)
+        }
         let weapons = [
             "rapid": "Machine gun", "scatter": "Shotgun", "homing": "Homing missile", "cannon": "Cannon",
             "laser": "Laser", "grenade": "Grenade",

@@ -3,6 +3,10 @@ import Foundation
 // The native wire model mirrors the Go server. Omitted optional gameplay fields
 // use the protocol defaults, allowing the same renderer to display both arenas.
 public enum GamePalette {
+    public static func changedPilotColor(previous: Int?, current: Int?) -> Int? {
+        guard let current, colors.indices.contains(current), previous != current else { return nil }
+        return current
+    }
     public static func randomPilotColor(
         current: Int, avoiding used: [Int], choose: (Int) -> Int = { Int.random(in: 0..<$0) }
     ) -> Int {

@@ -1,10 +1,10 @@
-# leqra v0.9.3 — current game protocol (protocol 1)
+# leqra v0.9.4 — current game protocol (protocol 1)
 
 The network protocol epoch is **1**. Clients and servers can play together when they use the same epoch. Release versions identify builds and remain available for display and update prompts. Current versions include their `v` prefix and optional suffix, such as `v5.8.1-dev`.
 
 ```json
-{"type":"server_hello","version":"v0.9.3","protocol":1}
-{"type":"client_hello","version":"v0.9.3","protocol":1}
+{"type":"server_hello","version":"v0.9.4","protocol":1}
+{"type":"client_hello","version":"v0.9.4","protocol":1}
 ```
 
 The fixed-room socket requires `client_hello` before room and matchmaking actions. The server replies with `client_ready` on success. An incompatible protocol receives an error with `code: "version_mismatch"`, `action: "version"`, `serverVersion`, and the required `protocol`.
@@ -52,8 +52,8 @@ Private `welcome` includes the run's `generation`. If the Infinity socket discon
 A room spectator can watch a running **private** Infinity arena without taking a tank seat:
 
 ```json
-{"type":"join","version":"v0.9.3","protocol":1,"code":"FRIENDS","token":"existing-room-token","spectating":true,"resume":true,"generation":3,"target":12}
-{"type":"welcome","protocol":1,"version":"v0.9.3","id":0,"seed":123,"generation":3,"resumed":true,"spectating":true,"following":12}
+{"type":"join","version":"v0.9.4","protocol":1,"code":"FRIENDS","token":"existing-room-token","spectating":true,"resume":true,"generation":3,"target":12}
+{"type":"welcome","protocol":1,"version":"v0.9.4","id":0,"seed":123,"generation":3,"resumed":true,"spectating":true,"following":12}
 ```
 
 The room token must identify a current human spectator in that room and generation. The `spectating` flag alone grants no access; combat pilots, forged tokens, other rooms, and Public Infinity cannot use this path. No tank, score, account, input authority, player capacity, readiness, or roaming-bot population is allocated. Spectator welcomes contain no local tank ID or account bearer. The ordinary room socket remains connected for membership and role changes.

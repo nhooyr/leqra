@@ -20,7 +20,7 @@
       "This browser cannot create a 2D canvas. Please open the game in another browser."
     return
   }
-  const GAME_VERSION = "v0.9.3"
+  const GAME_VERSION = "v0.9.4"
   const GAME_PROTOCOL = 1
   const TAU = Math.PI * 2,
     CELL = 84,
@@ -9134,6 +9134,14 @@
     if (player) player.name = name
     const tank = player && tanks.find((t) => t.id === player.id)
     if (tank) tank.name = name
+    if (player) persistLocalRoomRules()
+  }
+  function persistInfinityPilotColor(index, color) {
+    rememberPilotColor(index, color)
+    if (mode !== "room") return
+    const member = index ? secondaryMember() : roomMember(localPlayerID()),
+      player = member && localRoom.players.find((p) => p.id === member.id && p.member === member.member)
+    if (player) player.colorIndex = color
     if (player) persistLocalRoomRules()
   }
   function acceptCallsign(msg) {
@@ -20068,6 +20076,7 @@
     setMouseControlEnabled,
     cleanPilotName,
     persistPilotName: persistInfinityPilotName,
+    persistPilotColor: persistInfinityPilotColor,
     syncCallsignEditors,
     syncSidebarContext,
     mountSidebar,

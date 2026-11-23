@@ -43,6 +43,13 @@ an offline co-pilot can retain a hidden zero-score identity when its paired
 credential still owns an unaffected seat. Neither operation releases reserved
 online callsigns or lets another device take over their ownership.
 
+**Randomize tank colors** changes every existing Public Infinity pilot's color,
+including offline pilots and bots, regardless of the callsign filter. First place
+uses blue; everyone else gets a different, randomly chosen non-blue color.
+Scores and identities stay the same. The assignments are saved and sent to
+connected clients immediately, including both local pilots. Private rooms keep
+their own colors.
+
 Mutations are serialized with the authoritative server and committed to the
 SQLite database selected by `LEQRA_DATA` before broadcasting. The page cannot
 upload scores or change a player's ownership token. It accepts only loopback

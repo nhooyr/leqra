@@ -1482,6 +1482,105 @@ test("nearby Godlike spawn notices precede encounters, deduplicate by life and n
   assert.equal(notice.hidden, true)
 })
 
+test("public snapshots retain both owned pilot colors without overwriting later manual choices", () => {
+  const h = harness(undefined, true),
+    saved = []
+  h.window.leqraInfinityArt.persistPilotColor = (seat, color) => saved.push([seat, color])
+  h.infinity.start("online", { localName: "P2", colorIndex: 0, localColorIndex: 1 })
+  const ws = h.sockets[0]
+  ws.receive({ type: "welcome", id: 1, localId: 2, seed: 0 })
+  const state = (first, second) => ({
+    type: "state",
+    tanks: [
+      { id: 1, name: "P1", hp: 1, x: 42, y: 42, colorIndex: first },
+      { id: 2, name: "P2", hp: 1, x: 126, y: 42, colorIndex: second },
+      { id: 3, name: "REMOTE", hp: 1, x: 210, y: 42, colorIndex: 7 },
+    ],
+    bullets: [],
+    leaderboard: [],
+    players: 3,
+  })
+  ws.receive(state(0, 1))
+  assert.deepEqual(saved, [], "matching initial choices require no preference writes")
+  ws.receive(state(4, 6))
+  assert.deepEqual(saved, [
+    [0, 4],
+    [1, 6],
+  ])
+  assert.equal(h.state().colorIndex, 4)
+  assert.equal(h.state().localColorIndex, 6)
+  ws.receive(state(4, 6))
+  assert.equal(saved.length, 2, "unchanged snapshots do not write preferences")
+  h.state().colorIndex = 3
+  h.state().localColorIndex = 5
+  ws.receive(state(4, 6))
+  assert.equal(h.state().colorIndex, 3, "a later manual P1 choice remains untouched")
+  assert.equal(h.state().localColorIndex, 5, "a later manual P2 choice remains untouched")
+  ws.receive(state(0, 2))
+  assert.deepEqual(
+    saved.slice(-2),
+    [
+      [0, 0],
+      [1, 2],
+    ],
+    "a new server recolor updates both seats",
+  )
+  ws.receive(state(-1, 8))
+  assert.equal(saved.length, 4, "invalid palette values never become saved choices")
+  h.infinity.close()
+})
+
+test("private Infinity paint never replaces saved public pilot colors", () => {
+  const h = harness(undefined, true),
+    saved = []
+  h.window.leqraInfinityArt.persistPilotColor = (seat, color) => saved.push([seat, color])
+  h.infinity.start("online", { code: "ROOM", token: "owner", colorIndex: 0 })
+  h.sockets[0].receive({ type: "welcome", id: 1, seed: 0 })
+  h.sockets[0].receive({
+    type: "state",
+    tanks: [{ id: 1, name: "P1", hp: 1, x: 42, y: 42, colorIndex: 4 }],
+    bullets: [],
+    leaderboard: [],
+    players: 1,
+  })
+  assert.deepEqual(saved, [])
+  assert.equal(h.state().colorIndex, 0)
+  h.infinity.close()
+})
+
+test("public paint updates the persisted local roster used for the next join", () => {
+  const players = [
+      { id: 0, member: 1, colorIndex: 0 },
+      { id: 2, member: 3, colorIndex: 1 },
+    ],
+    saved = []
+  let writes = 0
+  const context = vm.createContext({
+    mode: "room",
+    localRoom: { players },
+    rememberPilotColor: (seat, color) => saved.push([seat, color]),
+    localPlayerID: () => 0,
+    roomMember: () => players[0],
+    secondaryMember: () => players[1],
+    persistLocalRoomRules: () => writes++,
+  })
+  vm.runInContext(
+    extractFunction(readFileSync(assetPath("game.js"), "utf8"), "persistInfinityPilotColor"),
+    context,
+  )
+  context.persistInfinityPilotColor(0, 4)
+  context.persistInfinityPilotColor(1, 6)
+  assert.deepEqual(saved, [
+    [0, 4],
+    [1, 6],
+  ])
+  assert.deepEqual(
+    players.map((p) => p.colorIndex),
+    [4, 6],
+  )
+  assert.equal(writes, 2)
+})
+
 test("a reconnecting session announces the next persisted Godlike life without replaying snapshots", () => {
   const h = harness(undefined, true)
   h.infinity.start("online")

@@ -16,9 +16,9 @@ import (
 )
 
 type testLeaderboardAdminBackend struct {
-	resets, removals int
-	pattern          string
-	fail             bool
+	resets, removals, recolors int
+	pattern                    string
+	fail                       bool
 }
 
 func (b *testLeaderboardAdminBackend) AdminLeaderboard() []leaderboardAdminEntry {
@@ -37,6 +37,14 @@ func (b *testLeaderboardAdminBackend) RemovePublicLeaderboard(pattern string) (i
 	b.removals++
 	b.pattern = pattern
 	return 1, nil
+}
+
+func (b *testLeaderboardAdminBackend) RandomizePublicColors() (int, error) {
+	b.recolors++
+	if b.fail {
+		return 0, errors.New("private database path")
+	}
+	return 3, nil
 }
 
 func adminTestRequest(a *leaderboardAdmin, method, path, body string, headers map[string]string) *httptest.ResponseRecorder {
@@ -145,6 +153,56 @@ func TestLeaderboardAdminPreviewAndActions(t *testing.T) {
 	w = adminTestRequest(a, "POST", "/api/reset", `{}`, headers)
 	if w.Code != 500 || bytes.Contains(w.Body.Bytes(), []byte("private database path")) {
 		t.Fatal("database error was exposed or swallowed")
+	}
+}
+
+func TestLeaderboardAdminRandomizeColors(t *testing.T) {
+	b := &testLeaderboardAdminBackend{}
+	a, err := newLeaderboardAdmin(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name, method, body string
+		headers            map[string]string
+		status             int
+	}{
+		{"missing csrf", "POST", "{}", nil, 403},
+		{"cross origin", "POST", "{}", map[string]string{"Origin": "https://evil.example"}, 403},
+		{"nonlocal peer", "POST", "{}", map[string]string{"RemoteAddr": "192.0.2.1:12345"}, 403},
+		{"rebound host", "POST", "{}", map[string]string{"Host": "evil.example"}, 403},
+		{"form content", "POST", "{}", map[string]string{"Content-Type": "text/plain"}, 415},
+		{"filtered request", "POST", `{"pattern":"test"}`, nil, 400},
+		{"client colors", "POST", `{"colors":[0,1]}`, nil, 400},
+		{"extra object", "POST", `{} {}`, nil, 400},
+		{"malformed JSON", "POST", `{`, nil, 400},
+		{"get", "GET", "", nil, 404},
+		{"put", "PUT", "{}", nil, 404},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			headers := map[string]string{"Content-Type": "application/json", "X-Leqra-Admin-CSRF": a.csrf}
+			if test.name == "missing csrf" {
+				delete(headers, "X-Leqra-Admin-CSRF")
+			}
+			for key, value := range test.headers {
+				headers[key] = value
+			}
+			response := adminTestRequest(a, test.method, "/api/randomize-colors", test.body, headers)
+			if response.Code != test.status || b.recolors != 0 {
+				t.Fatalf("rejected request: status=%d recolors=%d body=%s", response.Code, b.recolors, response.Body)
+			}
+		})
+	}
+	headers := map[string]string{"Content-Type": "application/json", "X-Leqra-Admin-CSRF": a.csrf}
+	response := adminTestRequest(a, "POST", "/api/randomize-colors", `{}`, headers)
+	var result struct{ Affected int }
+	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &result) != nil || result.Affected != 3 || b.recolors != 1 {
+		t.Fatalf("randomization failed: status=%d body=%s", response.Code, response.Body)
+	}
+	b.fail = true
+	response = adminTestRequest(a, "POST", "/api/randomize-colors", `{}`, headers)
+	if response.Code != 500 || strings.Contains(response.Body.String(), "private database path") {
+		t.Fatal("failed color mutation was hidden or exposed internal details")
 	}
 }
 

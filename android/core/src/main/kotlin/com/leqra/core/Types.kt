@@ -2,6 +2,10 @@ package com.leqra.core
 
 // Native protocol DTOs. Gameplay fields retain server defaults.
 object GamePalette {
+    fun changedPilotColor(previous: Int?, current: Int?): Int? = current?.takeIf {
+        it in colors.indices && it != previous
+    }
+
     fun randomPilotColor(
         current: Int,
         avoiding: Collection<Int>,

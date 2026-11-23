@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.9.4
+
+- Add an admin action to randomize Public Infinity tank colors, including bots, while keeping the leader blue and updating connected clients and saved pilot colors.
+
 ## v0.9.3
 
 - Preserve Android's version-code sequence across the v5-to-v0 rename so existing installations can upgrade.

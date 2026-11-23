@@ -203,3 +203,67 @@ test("admin Clear matches stays disabled after failed or invalidated mutation re
     assert.equal(requests.length, before, outcome + " cannot mutate with stale match counts")
   }
 })
+
+test("admin color randomization updates everyone independently of the callsign filter", async () => {
+  const { nodes, requests, confirmations } = fixture(),
+    randomize = nodes.get("#randomizeColors"),
+    pattern = nodes.get("#pattern")
+  assert.equal(randomize.disabled, true, "wait for the admin CSRF token")
+  await randomize.listeners.click()
+  assert.equal(requests.length, 1)
+  requests[0].resolve(response(0))
+  await settle()
+  assert.equal(randomize.disabled, false, "zero filter matches do not disable the global action")
+  pattern.value = "["
+  pattern.listeners.input()
+  assert.equal(nodes.get("#remove").disabled, true)
+
+  const mutation = randomize.listeners.click()
+  assert.equal(requests[1].url, "/api/randomize-colors")
+  assert.equal(requests[1].options.method, "POST")
+  assert.equal(requests[1].options.headers["Content-Type"], "application/json")
+  assert.equal(requests[1].options.headers["X-Leqra-Admin-CSRF"], "secret")
+  assert.deepEqual(JSON.parse(requests[1].options.body), {}, "the filter is not submitted")
+  assert.match(confirmations[0], /including bots/)
+  assert.match(confirmations[0], /leader stays blue/)
+  assert.match(confirmations[0], /regardless of the filter/)
+  assert.equal(randomize.disabled, true)
+  assert.equal(nodes.get("#reset").disabled, true)
+  await randomize.listeners.click()
+  assert.equal(requests.length, 2, "pending requests cannot run twice")
+
+  requests[1].resolve({ ok: true, json: async () => ({ affected: 7 }) })
+  await settle()
+  assert.equal(requests[2].url, "/api/leaderboard?pattern=%5B")
+  assert.equal(randomize.disabled, true, "refresh is part of the pending operation")
+  requests[2].resolve(response(0))
+  await mutation
+  assert.equal(randomize.disabled, false)
+  assert.equal(nodes.get("#reset").disabled, false)
+  assert.match(nodes.get("#status").textContent, /7 tanks updated; the leader stays blue/)
+})
+
+test("admin color randomization respects cancellation", async () => {
+  const { nodes, requests } = fixture({ confirmed: false })
+  requests[0].resolve(response())
+  await settle()
+  await nodes.get("#randomizeColors").listeners.click()
+  assert.equal(requests.length, 1)
+  assert.equal(nodes.get("#randomizeColors").disabled, false)
+})
+
+test("admin color randomization reports failure and permits retry", async () => {
+  for (const networkFailure of [false, true]) {
+    const { nodes, requests } = fixture()
+    requests[0].resolve(response())
+    await settle()
+    const mutation = nodes.get("#randomizeColors").listeners.click()
+    if (networkFailure) requests[1].reject(new Error("Connection lost"))
+    else requests[1].resolve({ ok: false, text: async () => "Color update failed" })
+    await mutation
+    assert.equal(requests.length, 2, "failed operations do not refresh or report success")
+    assert.equal(nodes.get("#randomizeColors").disabled, false)
+    assert.equal(nodes.get("#reset").disabled, false)
+    assert.equal(nodes.get("#status").textContent, networkFailure ? "Connection lost" : "Color update failed")
+  }
+})

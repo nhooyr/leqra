@@ -38,6 +38,7 @@ type leaderboardAdminBackend interface {
 	RecoverAdminAccount(string, string) error
 	ResetPublicLeaderboard() (int, error)
 	RemovePublicLeaderboard(string) (int, error)
+	RandomizePublicColors() (int, error)
 }
 
 type leaderboardAdmin struct {
@@ -176,7 +177,7 @@ func (a *leaderboardAdmin) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, leaderboardAdminJS)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/leaderboard":
 		a.list(w, r)
-	case r.Method == http.MethodPost && (r.URL.Path == "/api/reset" || r.URL.Path == "/api/remove" || r.URL.Path == "/api/recover-account"):
+	case r.Method == http.MethodPost && (r.URL.Path == "/api/reset" || r.URL.Path == "/api/remove" || r.URL.Path == "/api/recover-account" || r.URL.Path == "/api/randomize-colors"):
 		if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Leqra-Admin-CSRF")), []byte(a.csrf)) != 1 {
 			http.Error(w, "invalid CSRF token", http.StatusForbidden)
 			return
@@ -322,7 +323,9 @@ func (a *leaderboardAdmin) mutate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var count int
-	if r.URL.Path == "/api/reset" {
+	if r.URL.Path == "/api/randomize-colors" {
+		count, err = a.backend.RandomizePublicColors()
+	} else if r.URL.Path == "/api/reset" {
 		count, err = a.backend.ResetPublicLeaderboard()
 	} else {
 		count, err = a.backend.RemovePublicLeaderboard(pattern)
