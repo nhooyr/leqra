@@ -8,6 +8,9 @@
   },
   "devDependencies": {
     "acorn": "8.19.0",
-    "prettier": "3.10.1"
+    "express": "^5.3.0",
+    "playwright": "^1.65.1",
+    "prettier": "3.10.1",
+    "uuid": "^14.0.3"
   }
 }

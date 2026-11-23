@@ -1,6 +1,13 @@
 # Testing leqra
 
-Run from the repository root with Go 1.23+, Node.js, and Python 3.
+Run from the repository root with Go 1.23+, Node.js, and Perl 5.34+.
+
+Install the JavaScript and Perl test dependencies first, using `cpanm`:
+
+```sh
+npm ci --ignore-scripts
+NODE_PATH="$(npm root)" cpanm --installdeps .
+```
 
 ```sh
 go test -race -count=1 ./...
@@ -8,10 +15,10 @@ go vet ./...
 go build -trimpath -o bin/leqra ./src
 node --check src/web/assets/v*/game.js
 node --test src/tests/*.test.cjs
-python3 -m unittest discover -s tests -p 'test_*.py' -v
+prove -Itests/lib -v tests/*.t
 ```
 
-The Python suite exercises local startup and deployment with mocked builds, browser launches, SSH, transfers, and remote commands.
+The Perl suite exercises local startup and deployment with mocked builds, browser launches, SSH, transfers, and remote commands.
 
 Keep generated reports and screenshots local. Older raw results are available in the repository history.
 
@@ -27,9 +34,8 @@ The maintained Playwright harnesses cover the quick tour, room regressions, touc
 Node-based browser harnesses also require the `playwright` package.
 
 ```sh
-python3 -m pip install playwright
-python3 -m playwright install chromium webkit
-python3 src/tests/intro_tour_browser.py
+npx playwright install chromium webkit
+perl src/tests/intro_tour_browser.pl
 ```
 
 Use a dedicated local database for online checks so test accounts and scores do
@@ -43,14 +49,14 @@ LEQRA_DATA="$LEQRA_TEST_DIR/data.sqlite" LEQRA_ADMIN_ADDR=off go run ./src
 Then run the online checks.
 
 ```sh
-python3 src/tests/infinity_browser.py http://localhost:8080
-python3 src/tests/audit_browser.py http://localhost:8080
-python3 src/tests/mobile_browser.py http://localhost:8080
-python3 src/tests/mobile_browser.py http://localhost:8080 --engine webkit
-python3 src/tests/mobile_layout_browser.py http://localhost:8080
-python3 src/tests/mobile_layout_browser.py http://localhost:8080 --engine webkit
-python3 src/tests/pwa_update_browser.py --browser chromium --browser webkit
-python3 src/tests/typography_browser.py http://localhost:8080 --browser chromium --browser webkit
+perl src/tests/infinity_browser.pl http://localhost:8080
+perl src/tests/audit_browser.pl http://localhost:8080
+perl src/tests/mobile_browser.pl http://localhost:8080
+perl src/tests/mobile_browser.pl http://localhost:8080 --engine webkit
+perl src/tests/mobile_layout_browser.pl http://localhost:8080
+perl src/tests/mobile_layout_browser.pl http://localhost:8080 --engine webkit
+perl src/tests/pwa_update_browser.pl --browser chromium --browser webkit
+perl src/tests/typography_browser.pl http://localhost:8080 --browser chromium --browser webkit
 node src/tests/web_room_chat_browser.cjs http://localhost:8080 --disposable /tmp/leqra-room-chat
 node src/tests/grenade_hints_browser.cjs /tmp/leqra-touch-controls
 LEQRA_BROWSER=webkit node src/tests/grenade_hints_browser.cjs /tmp/leqra-touch-controls-webkit
@@ -99,7 +105,7 @@ For live checks, run `go run ./src` and open the served page in separate browser
 
 ## Historical harnesses
 
-The other Python browser and protocol scripts in `src/tests/`, including `browser_smoke.py` and `protocol_smoke.py`, are release-specific. Run them against their matching revision. Their assertions can cover retired behavior such as grenade self-damage. For historical scripts that request the opt-in Go fixture, start it from that revision.
+The other Perl browser and protocol scripts in `src/tests/`, including `browser_smoke.pl` and `protocol_smoke.pl`, are release-specific. Run them against their matching revision. Their assertions can cover retired behavior such as grenade self-damage. For historical scripts that request the opt-in Go fixture, start it from that revision.
 
 ```sh
 LEQRA_BROWSER_FIXTURE=1 LEQRA_BROWSER_ADDR=127.0.0.1:18790 \

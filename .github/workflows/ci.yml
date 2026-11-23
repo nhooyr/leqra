@@ -90,7 +90,7 @@ jobs:
             ${{ runner.temp }}/leqra-ios/SDKExplicitPrecompiledModules
             ${{ runner.temp }}/leqra-ios/CompilationCache.noindex
             ${{ runner.temp }}/leqra-ios/SourcePackages
-          key: ios-${{ runner.os }}-${{ runner.arch }}-${{ steps.ios-cache.outputs.toolchain }}-${{ hashFiles('ios/**', 'ci/ios.sh', 'ci/ios-cache.py', 'scripts/ios-version.sh', 'scripts/version.sh', 'src/main.go') }}
+          key: ios-${{ runner.os }}-${{ runner.arch }}-${{ steps.ios-cache.outputs.toolchain }}-${{ hashFiles('ios/**', 'ci/ios.sh', 'ci/ios-cache.pl', 'scripts/ios-version.sh', 'scripts/version.sh', 'src/main.go') }}
           restore-keys: |
             ios-${{ runner.os }}-${{ runner.arch }}-${{ steps.ios-cache.outputs.toolchain }}-
       - run: ./ci/ios.sh

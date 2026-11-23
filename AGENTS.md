@@ -8,18 +8,18 @@
 
 ## Build, Test, and Development Commands
 
-Run from the repository root. Use Go 1.23+, Node.js for JavaScript tests, and Python 3 for deployment tests.
+Run from the repository root. Use Go 1.23+, Node.js for JavaScript tests, and Perl for deployment tests.
 
 - `go run ./src` or `./dev.sh`: start locally at `http://localhost:8080`.
 - `go build -trimpath -o bin/leqra ./src`: build the executable with embedded assets.
 - `go test -race -count=1 ./...`: run Go tests with race detection.
 - `node --test src/tests/*.test.cjs`: run Node's built-in test suite.
-- `python3 -m unittest discover -s tests -p 'test_deploy.py' -v`: run deployment tests without contacting a host.
+- `prove -Itests/lib -v tests/test_deploy.t`: run deployment tests without contacting a host.
 - `go vet ./...`, `node --check src/web/assets/v*/game.js`, and `sh -n deploy/server.sh`: run static checks.
 
 ## Coding Style & Naming Conventions
 
-Format Go with `gofmt`; use tabs, exported `CamelCase`, and unexported `camelCase` identifiers. Prefer descriptive snake_case filenames. Preserve surrounding compact JavaScript/CSS formatting and use JavaScript `camelCase`. Python uses four-space indentation. Avoid unrelated reformatting and preserve existing staged and unstaged edits.
+Format Go with `gofmt`; use tabs, exported `CamelCase`, and unexported `camelCase` identifiers. Prefer descriptive snake_case filenames. Preserve surrounding compact JavaScript/CSS formatting and use JavaScript `camelCase`. Perl uses four-space indentation. Avoid unrelated reformatting and preserve existing staged and unstaged edits.
 
 Get the user's approval before editing the root `README.md`.
 

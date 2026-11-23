@@ -1,0 +1,12 @@
+requires 'perl', '5.034';
+requires 'Playwright', '1.641';
+requires 'Path::Tiny', '0.150';
+requires 'Mojolicious', '9.0';
+requires 'URI';
+requires 'Archive::Zip';
+requires 'XML::Parser';
+requires 'HTTP::Request';
+requires 'LWP::UserAgent';
+requires 'HTTP::Daemon';
+requires 'HTTP::Response';
+requires 'LWP::MediaTypes';

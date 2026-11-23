@@ -1,3 +1,3 @@
 #!/bin/sh
 set -eu
-exec python3 "$(dirname "$0")/vergen.py" "$@"
+exec perl "$(dirname "$0")/vergen.pl" "$@"

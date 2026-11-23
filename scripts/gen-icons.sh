@@ -1,3 +1,3 @@
 #!/bin/sh
 set -eu
-exec python3 "$(dirname "$0")/render-icons.py" "$@"
+exec perl "$(dirname "$0")/render-icons.pl" "$@"

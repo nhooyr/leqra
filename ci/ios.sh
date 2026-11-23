@@ -4,35 +4,9 @@ cd "$(dirname "$0")/.."
 
 ci_tmpdir=${RUNNER_TEMP:-${TMPDIR:-/tmp}}
 
-python3 ci/ios-cache.py restore "$ci_tmpdir/leqra-ios-inputs.json"
+perl ci/ios-cache.pl restore "$ci_tmpdir/leqra-ios-inputs.json"
 
-simulator=$(
-	python3 - <<'PY'
-import json
-import subprocess
-
-inventory = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "--json"]))
-devices = inventory["devices"]
-runtimes = [runtime for runtime in inventory["runtimes"]
-            if ".iOS-" in runtime["identifier"] and runtime["isAvailable"]]
-standard = [runtime for runtime in runtimes
-            if runtime["identifier"].endswith(".iOS-" + runtime["version"].replace(".", "-"))]
-runtimes = sorted(
-    standard or runtimes,
-    key=lambda runtime: tuple(map(int, runtime["version"].split("."))),
-    reverse=True,
-)
-device = next(
-    device
-    for runtime in runtimes
-    for device in devices.get(runtime["identifier"], [])
-    if device["name"].startswith("iPhone") and device["isAvailable"]
-)
-if device["state"] == "Shutdown":
-    subprocess.run(["xcrun", "simctl", "boot", device["udid"]], check=True)
-print(device["udid"])
-PY
-)
+simulator=$(perl ci/ios-simulator.pl)
 
 swift test --package-path ios --configuration release --disable-index-store \
 	--build-system native --scratch-path "$ci_tmpdir/leqra-swift"
@@ -51,4 +25,4 @@ xcodebuild -project ios/leqra.xcodeproj -scheme leqra \
 	COMPILATION_CACHE_CAS_PATH="$ci_tmpdir/leqra-ios/CompilationCache.noindex" \
 	CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= test
 
-python3 ci/ios-cache.py save "$ci_tmpdir/leqra-ios-inputs.json"
+perl ci/ios-cache.pl save "$ci_tmpdir/leqra-ios-inputs.json"

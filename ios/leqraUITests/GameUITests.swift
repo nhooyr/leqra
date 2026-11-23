@@ -1446,7 +1446,7 @@ final class GameUITests: XCTestCase {
     @MainActor
     func testPendingCallsignReleaseBlocksPlayAndFailureUnblocksIt() async throws {
         guard ProcessInfo.processInfo.environment["LEQRA_DELAYED_RELEASE_UI"] == "1" else {
-            throw XCTSkip("Opt in with the disposable delayed_release_server.py fixture.")
+            throw XCTSkip("Opt in with the disposable delayed_release_server.pl fixture.")
         }
         try requireOnlineTestServer()
         for fails in [false, true] {
