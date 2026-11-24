@@ -131,13 +131,13 @@ jobs:
             android-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('android/**/*.gradle.kts', 'android/gradle.properties', 'android/gradle/wrapper/gradle-wrapper.properties') }}-
       - uses: actions/cache@v6
         with:
-          path: ${{ env.ANDROID_HOME }}/system-images/android-35/google_apis/x86_64
-          key: android-image-${{ runner.os }}-${{ runner.arch }}-35-google_apis-x86_64
+          path: ${{ env.ANDROID_HOME }}/system-images/android-35/default/x86_64
+          key: android-image-${{ runner.os }}-${{ runner.arch }}-35-default-x86_64
       - run: ./ci/android.sh
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
-          target: google_apis
+          target: default
           arch: x86_64
           profile: pixel_6
           disable-animations: true
