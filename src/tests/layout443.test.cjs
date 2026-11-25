@@ -79,6 +79,23 @@ function boot(width, height, coarse = false) {
   return s
 }
 
+test("arena status is a footer on desktop and tablets, including tablet split views, but stays above phones", () => {
+  for (const [width, height, touch, device, footer] of [
+    [1440, 900, false, [1440, 900], true],
+    [500, 800, false, [1440, 900], true],
+    [768, 1024, true, [768, 1024], true],
+    [1024, 768, true, [768, 1024], true],
+    [500, 768, true, [768, 1024], true],
+    [390, 844, true, [390, 844], false],
+    [844, 390, true, [390, 844], false],
+  ]) {
+    const s = boot(width, height, touch)
+    s.window.screen = { width: device[0], height: device[1] }
+    s.setLayout()
+    assert.equal(s.document.body.classList.contains("status-footer"), footer, width + "x" + height)
+  }
+})
+
 test("startup callsign editors are top-level before collapsed room settings and player rosters", () => {
   const html = fs.readFileSync(require("node:path").join(__dirname, "../web/index.html"), "utf8"),
     stack = [],

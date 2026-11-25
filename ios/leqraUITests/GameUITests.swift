@@ -375,6 +375,49 @@ final class GameUITests: XCTestCase {
     }
 
     @MainActor
+    func testStatusPlacementPreservesPhoneRowsAndUsesTabletFooter() {
+        func assertPlacement(_ app: XCUIApplication, content: String) {
+            let body = app.descendants(matching: .any)[content].firstMatch
+            let status = app.descendants(matching: .any)["arenaStatusBar"].firstMatch
+            let header = app.descendants(matching: .any)["gameHeader"].firstMatch
+            XCTAssertTrue(body.waitForExistence(timeout: 5))
+            XCTAssertTrue(status.waitForExistence(timeout: 5))
+            XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "arenaStatusBar").count, 1)
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                XCTAssertLessThanOrEqual(header.frame.maxY, body.frame.minY + 1)
+                XCTAssertGreaterThanOrEqual(status.frame.minY, body.frame.maxY - 1)
+            } else {
+                XCTAssertLessThanOrEqual(header.frame.maxY, status.frame.minY + 1)
+                XCTAssertLessThanOrEqual(status.frame.maxY, body.frame.minY + 1)
+            }
+        }
+        let ready = launch()
+        for landscape in [false, true] {
+            XCUIDevice.shared.orientation = landscape ? .landscapeLeft : .portrait
+            waitForOrientation(ready, landscape: landscape)
+            assertPlacement(ready, content: "readyRoomScroll")
+        }
+        ready.terminate()
+        for fixed in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments =
+                [
+                    "-serverURL", "http://127.0.0.1:1", "--public-session-test-namespace",
+                    "footer-" + UUID().uuidString, "--reset-public-session-test-store",
+                    "--skip-public-session-restore", "--probe-direct-aim",
+                ] + (fixed ? ["--probe-fixed"] : [])
+            app.launch()
+            XCTAssertTrue(app.buttons["pauseGame"].waitForExistence(timeout: 10))
+            for landscape in [false, true] {
+                XCUIDevice.shared.orientation = landscape ? .landscapeLeft : .portrait
+                waitForOrientation(app, landscape: landscape)
+                assertPlacement(app, content: "arenaStage")
+            }
+            app.terminate()
+        }
+    }
+
+    @MainActor
     func testShowcaseRendersAndRestoresOnAppReturn() async throws {
         let app = launch(callsign: "SCENE " + UUID().uuidString.prefix(8), arguments: [])
         let originalName = app.textFields["callsignField"].value as? String
@@ -396,6 +439,11 @@ final class GameUITests: XCTestCase {
         XCTAssertTrue(loadout.exists)
         XCTAssertLessThanOrEqual(header.frame.maxY, stage.frame.minY)
         XCTAssertGreaterThanOrEqual(loadout.frame.minY, stage.frame.maxY)
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            XCTAssertGreaterThanOrEqual(status.frame.minY, loadout.frame.maxY)
+        } else {
+            XCTAssertLessThanOrEqual(status.frame.maxY, stage.frame.minY)
+        }
         XCTAssertEqual(app.staticTexts["pilotIdentity"].label, "aqsnow (P1)")
         XCTAssertTrue(
             app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'LASER'")).firstMatch.exists)
@@ -417,6 +465,11 @@ final class GameUITests: XCTestCase {
         waitForOrientation(app, landscape: true)
         XCTAssertTrue(header.exists)
         XCTAssertTrue(loadout.exists)
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            XCTAssertGreaterThanOrEqual(status.frame.minY, loadout.frame.maxY)
+        } else {
+            XCTAssertLessThanOrEqual(status.frame.maxY, stage.frame.minY)
+        }
         capture(app, name: "Showcase landscape with gameplay chrome")
         XCUIDevice.shared.press(.home)
         try await Task.sleep(nanoseconds: 700_000_000)

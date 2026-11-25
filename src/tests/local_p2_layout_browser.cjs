@@ -21,10 +21,41 @@ const profiles = [
   [844, 390],
   [768, 1024],
   [1024, 768],
+  [500, 768, true, 768, 1024],
   [1280, 900, false],
 ].filter(([width]) => !widthFilter || widthFilter === width)
 const names = ["WIDE PILOT ALPHA", "WIDE PILOT BRAVO"]
 const errors = []
+async function checkStatusPlacement(page, arena, label) {
+  const data = await page.evaluate((arena) => {
+    const root = arena === "showcase" ? document.querySelector("#showcaseDialog") : document,
+      header = root.querySelector(arena === "showcase" ? ".header" : "#gameHeader"),
+      stage = root.querySelector(arena === "fixed" ? "#arenaWrap" : ".infinite-stage"),
+      status =
+        arena === "fixed"
+          ? [...document.querySelectorAll(".arena-shell > .arena-bar")].find(
+              (node) => node.getBoundingClientRect().height > 0,
+            )
+          : root.querySelector(arena === "showcase" ? ".showcase-dialog > .arena-bar" : "#infiniteStatusbar"),
+      rect = (node) => {
+        const { top, bottom, height } = node.getBoundingClientRect()
+        return { top, bottom, height }
+      }
+    return {
+      footer: document.body.classList.contains("status-footer"),
+      header: rect(header),
+      stage: rect(stage),
+      status: rect(status),
+      height: innerHeight,
+    }
+  }, arena)
+  assert.ok(data.status.height > 0, label + " status hidden")
+  assert.ok(data.header.bottom <= data.stage.top + 1, label + " main header moved below the maze")
+  if (data.footer)
+    assert.ok(data.status.top >= data.stage.bottom - 1, label + " status is not below the maze")
+  else assert.ok(data.status.bottom <= data.stage.top + 1, label + " phone status moved below the maze")
+  assert.ok(data.status.bottom <= data.height + 1, label + " status outside viewport")
+}
 async function checkHUD(page, arena, variant, label) {
   const data = await page.evaluate(
     ({ arena, variant, names }) => {
@@ -160,15 +191,17 @@ async function checkHUD(page, arena, variant, label) {
       )
     }
   }
+  await checkStatusPlacement(page, arena, label)
   await page.screenshot({ path: path.join(output, label.replace(/[^a-z0-9]+/gi, "-") + ".png") })
 }
 ;(async () => {
   for (const [name, type] of Object.entries({ chromium, webkit })) {
     if (selected && selected !== name) continue
     const browser = await type.launch({ headless: true })
-    for (const [width, height, touch = true] of profiles) {
+    for (const [width, height, touch = true, deviceWidth = width, deviceHeight = height] of profiles) {
       const context = await browser.newContext({
         viewport: { width, height },
+        screen: { width: deviceWidth, height: deviceHeight },
         hasTouch: touch,
         isMobile: touch,
         serviceWorkers: "block",
@@ -184,6 +217,7 @@ async function checkHUD(page, arena, variant, label) {
       page.on("pageerror", (error) => errors.push(name + " " + error.message))
       await page.goto(url.href)
       await page.waitForFunction(() => window.__test)
+      await checkStatusPlacement(page, "fixed", name + " " + width + "x" + height + " ready room")
       await page.evaluate((names) => {
         window.requestAnimationFrame = () => 0
         const T = __test
@@ -207,6 +241,11 @@ async function checkHUD(page, arena, variant, label) {
       )
       for (const variant of ["equipment", "machine"])
         await checkHUD(page, "infinite", variant, name + " " + width + "x" + height + " infinite " + variant)
+      await page.evaluate(() => {
+        window.leqraInfinity.close()
+        window.leqraShowcase.open()
+      })
+      await checkStatusPlacement(page, "showcase", name + " " + width + "x" + height + " showcase")
       await context.close()
       console.log("PASS " + name + " " + width + "x" + height + " two-pilot fixed/Infinity HUD")
     }

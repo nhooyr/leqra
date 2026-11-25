@@ -111,6 +111,12 @@ class MainActivity : Activity() {
     private var safeLeft = 0
     private var safeRight = 0
     private var safeBottom = 0
+    private val bottomStatus: Boolean
+        get() = resources.configuration.smallestScreenWidthDp >= 600
+
+    private val arenaBottomInset: Int
+        get() = if (bottomStatus) 0 else safeBottom
+
     private val pressed = mutableSetOf<Int>()
     private var controlOwner: Int? = null
     private var controlLocalOwner: Int? = null
@@ -426,14 +432,11 @@ class MainActivity : Activity() {
                 safeLeft = safe.left
                 safeRight = safe.right
                 safeBottom = safe.contentBottom
-                readyScroll?.apply {
-                    setPadding(paddingLeft, paddingTop, paddingRight, dp(16) + safeBottom)
-                }
+                configureStatusLayout()
                 configureLoadoutLayout()
             }
             if (sidesChanged) {
                 header.setPadding(dp(12) + safeLeft, dp(5), dp(8) + safeRight, dp(5))
-                statusLine.setPadding(dp(12) + safeLeft, dp(6), dp(12) + safeRight, dp(6))
                 objectiveLine.setPadding(dp(12) + safeLeft, dp(5), dp(12) + safeRight, dp(5))
                 readySignature = ""
                 scoreSignature = ""
@@ -502,6 +505,7 @@ class MainActivity : Activity() {
             if (awake) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
+        configureStatusLayout()
         configureLoadoutLayout()
         loadout.visibility = if (playing && session.hasLocalPlayer) View.VISIBLE else View.GONE
         statusLine.visibility = if (loading) View.GONE else View.VISIBLE
@@ -600,12 +604,29 @@ class MainActivity : Activity() {
         applyRefreshRate()
     }
 
+    private fun configureStatusLayout() {
+        val target = if (bottomStatus) root.childCount - 1 else root.indexOfChild(header) + 1
+        if (root.indexOfChild(statusLine) != target) {
+            root.removeView(statusLine)
+            root.addView(statusLine, target, LinearLayout.LayoutParams(-1, -2))
+        }
+        statusLine.setPadding(
+            dp(12) + safeLeft,
+            dp(6),
+            dp(12) + safeRight,
+            dp(6) + if (bottomStatus) safeBottom else 0,
+        )
+        readyScroll?.apply {
+            setPadding(paddingLeft, paddingTop, paddingRight, dp(16) + arenaBottomInset)
+        }
+    }
+
     private fun configureLoadoutLayout() {
         if (!::loadout.isInitialized) return
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         val fixedPortrait = session.screen == Screen.PLAYING && !session.infinity && !landscape
         val paired = session.localID2 != null
-        val key = "$fixedPortrait:$landscape:$paired:$safeLeft:$safeRight:$safeBottom"
+        val key = "$fixedPortrait:$landscape:$paired:$safeLeft:$safeRight:$arenaBottomInset"
         if (key == loadoutLayoutKey) return
         loadoutLayoutKey = key
         loadout.compact = landscape || paired
@@ -613,14 +634,14 @@ class MainActivity : Activity() {
         loadout.safeLeft = safeLeft
         loadout.safeRight = safeRight
         loadout.safeBottom = 0
-        arena.safeInsets(safeLeft, 0, safeRight, safeBottom)
+        arena.safeInsets(safeLeft, 0, safeRight, arenaBottomInset)
         updateRoundAnnouncementInsets(fixedPortrait)
         loadout.requestLayout()
         loadout.invalidate()
     }
 
     private fun updateRoundAnnouncementInsets(fixedPortrait: Boolean) {
-        val reserved = if (fixedPortrait && !session.spectating) dp(119) + safeBottom else 0
+        val reserved = if (fixedPortrait && !session.spectating) dp(119) + arenaBottomInset else 0
         roundAnnouncement.setSafeArea(safeLeft, safeRight, reserved)
     }
 
@@ -687,7 +708,7 @@ class MainActivity : Activity() {
             ScrollView(this).apply {
                 isFillViewport = true
                 clipToPadding = false
-                setPadding(dp(12) + safeLeft, dp(12), dp(12) + safeRight, dp(16) + safeBottom)
+                setPadding(dp(12) + safeLeft, dp(12), dp(12) + safeRight, dp(16) + arenaBottomInset)
             }
         val holder = column(this).apply { gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL }
         val panel = column(this, 16).apply { background = panelBackground(this@MainActivity) }

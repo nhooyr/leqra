@@ -1489,6 +1489,13 @@
     touchLandscape = landscape
     document.body.classList.toggle("touch-ui", touchUI)
     document.body.classList.toggle("touch-landscape", touchLandscape)
+    const touchDevice = coarse || (navigator.maxTouchPoints || 0) > 0,
+      deviceWidth = window.screen?.width || innerWidth,
+      deviceHeight = window.screen?.height || innerHeight
+    document.body.classList.toggle(
+      "status-footer",
+      !touchDevice || Math.min(deviceWidth, deviceHeight) >= 600,
+    )
     renderPowerLegend()
     clearMatchSelection()
     $("pauseInstructions").innerHTML =

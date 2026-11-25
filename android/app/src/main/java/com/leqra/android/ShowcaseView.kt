@@ -83,6 +83,12 @@ internal class ShowcaseView(
     }
 
     private fun updateLayout() {
+        val bottomStatus = resources.configuration.smallestScreenWidthDp >= 600
+        val statusIndex = if (bottomStatus) childCount - 1 else indexOfChild(header) + 1
+        if (indexOfChild(status) != statusIndex) {
+            removeView(status)
+            addView(status, statusIndex, LayoutParams(-1, -2))
+        }
         header.display(
             !portrait,
             (width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels) /
@@ -100,12 +106,12 @@ internal class ShowcaseView(
             context.dp(12) + safeLeft,
             context.dp(6),
             context.dp(12) + safeRight,
-            context.dp(6),
+            context.dp(6) + if (bottomStatus) safeBottom else 0,
         )
         loadout.compact = !portrait
         loadout.safeLeft = safeLeft
         loadout.safeRight = safeRight
-        loadout.safeBottom = safeBottom
+        loadout.safeBottom = if (bottomStatus) 0 else safeBottom
         arena.safeInsets(safeLeft, 0, safeRight, 0)
         loadout.requestLayout()
     }

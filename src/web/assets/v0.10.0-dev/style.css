@@ -7703,3 +7703,45 @@ body .callsign-account-button.secondary {
   min-width: 0;
   align-items: center;
 }
+
+/* Phones keep arena status above play; larger devices keep it below the maze. */
+body.status-footer .arena-shell > .arena-bar {
+  order: 1;
+  border-top: 1px solid var(--border);
+  border-bottom: 0;
+}
+body.status-footer .infinity-preview-header > .infinity-preview-scoreboard {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+body.status-footer #infiniteArena[open],
+body.status-footer .showcase-dialog[open] {
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+}
+body.status-footer #infiniteHeader,
+body.status-footer .showcase-header {
+  grid-row: 1;
+}
+body.status-footer #infiniteArena > .infinite-stage,
+body.status-footer .showcase-stage {
+  grid-row: 2;
+}
+body.status-footer #infiniteArena > .infinite-underbar,
+body.status-footer .showcase-underbar {
+  grid-row: 3;
+}
+body.status-footer #infiniteStatusbar,
+body.status-footer .showcase-dialog > .arena-bar {
+  grid-row: 4;
+  border-top: 1px solid var(--border);
+  border-bottom: 0;
+}
+body.status-footer.touch-ui #infiniteArena[open] {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+body.status-footer.touch-ui #infiniteArena > .infinite-underbar {
+  grid-row: 2;
+}
+body.status-footer.touch-ui #infiniteArena > .infinite-stage {
+  grid-row: 3;
+}

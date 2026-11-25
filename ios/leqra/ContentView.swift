@@ -4,6 +4,9 @@ import leqraCore
 struct ContentView: View {
     @ObservedObject var session: GameSession
     @Environment(\.scenePhase) private var scenePhase
+    private var statusAtBottom: Bool {
+        NativePlatform.isDesktop || UIDevice.current.userInterfaceIdiom == .pad
+    }
     var body: some View {
         GeometryReader { geometry in
             let landscape = geometry.size.width > geometry.size.height
@@ -75,8 +78,9 @@ struct ContentView: View {
                 .allowsHitTesting(false)
             if let frame = session.showcaseFrame {
                 VStack(spacing: 0) {
-                    ArenaStatusBar(session: session, showcase: frame)
-                        .allowsHitTesting(false)
+                    if !statusAtBottom {
+                        ArenaStatusBar(session: session, showcase: frame).allowsHitTesting(false)
+                    }
                     NativeGameView(
                         scene: session.showcaseScene, highFrameRate: session.highFrameRate,
                         paused: false, infinity: true, landscape: landscape,
@@ -85,6 +89,10 @@ struct ContentView: View {
                     .accessibilityIdentifier("showcaseStage")
                     PilotLoadoutView(session: session, compact: landscape, showcase: frame)
                         .allowsHitTesting(false)
+                    if statusAtBottom {
+                        ArenaStatusBar(session: session, showcase: frame, atBottom: true)
+                            .allowsHitTesting(false)
+                    }
                 }.background(WebStyle.sunken)
             }
         }.padding(.top, landscape ? 5 : 9)
@@ -96,7 +104,7 @@ struct ContentView: View {
 
     private func readyRoom(landscape: Bool) -> some View {
         VStack(spacing: 0) {
-            ArenaStatusBar(session: session, preview: true)
+            if !statusAtBottom { ArenaStatusBar(session: session, preview: true) }
             ZStack(alignment: .topTrailing) {
                 NativeGameView(
                     scene: session.scene, highFrameRate: false, paused: true, infinity: true,
@@ -107,6 +115,7 @@ struct ContentView: View {
                 ReadyRoomView(session: session, landscape: landscape)
                 if session.showScores { ArenaStandings(session: session, preview: true).padding(10) }
             }.onAppear { session.preparePreview() }
+            if statusAtBottom { ArenaStatusBar(session: session, preview: true, atBottom: true) }
         }.background(WebStyle.sunken).clipShape(RoundedRectangle(cornerRadius: 9))
             .overlay(
                 RoundedRectangle(cornerRadius: 9).stroke(WebStyle.edge, lineWidth: 1).allowsHitTesting(false))
@@ -130,7 +139,7 @@ struct ContentView: View {
         let overlayHeight: CGFloat =
             !NativePlatform.isDesktop && !session.isInfinity && !landscape && !session.spectating ? 119 : 0
         return VStack(spacing: 0) {
-            ArenaStatusBar(session: session)
+            if !statusAtBottom { ArenaStatusBar(session: session) }
             if let objective = session.snapshot.objectives,
                 ["ctf", "koth", "survival"].contains(objective.mode)
             {
@@ -191,6 +200,7 @@ struct ContentView: View {
                     results.padding(.bottom, overlayHeight)
                 }
             }
+            if statusAtBottom { ArenaStatusBar(session: session, atBottom: true) }
         }.background(WebStyle.sunken).clipShape(RoundedRectangle(cornerRadius: session.isInfinity ? 0 : 9))
             .overlay(
                 RoundedRectangle(cornerRadius: session.isInfinity ? 0 : 9).stroke(

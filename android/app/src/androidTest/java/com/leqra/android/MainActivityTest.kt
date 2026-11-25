@@ -755,6 +755,13 @@ class MainActivityTest {
                 assertEquals(10, shown.scene.snapshot.tanks.size)
                 assertEquals(4, shown.scene.snapshot.pickups.size)
                 assertTrue(shown.arena.showControls)
+                assertEquals(
+                    "Showcase uses the same device-specific status placement",
+                    if (activity.resources.configuration.smallestScreenWidthDp >= 600)
+                        shown.childCount - 1
+                    else shown.indexOfChild(shown.header) + 1,
+                    shown.indexOfChild(shown.status),
+                )
                 val pauseButton =
                     (0 until shown.header.childCount).map(shown.header::getChildAt).single {
                         it.contentDescription == "Pause game"
@@ -799,6 +806,16 @@ class MainActivityTest {
                 },
             )
             SystemClock.sleep(100)
+            main {
+                val shown = showcase()!!
+                assertEquals(
+                    "Showcase keeps status placement after rotation",
+                    if (activity.resources.configuration.smallestScreenWidthDp >= 600)
+                        shown.childCount - 1
+                    else shown.indexOfChild(shown.header) + 1,
+                    shown.indexOfChild(shown.status),
+                )
+            }
             screenshot("showcase-landscape")
             device.executeShellCommand(
                 "am start -W -a android.intent.action.MAIN -c android.intent.category.HOME",
@@ -2661,6 +2678,106 @@ class MainActivityTest {
         assertTrue("Status is visible", loadout.visibility == View.VISIBLE && loadout.height > 0)
         assertTrue("Status sits below the header", loadout.top >= header.bottom)
         assertTrue("Status stays above the arena and touch controls", loadout.bottom <= stage.top)
+    }
+
+    @Test
+    fun arenaStatusUsesBottomOnTabletsAndTopOnPhones() {
+        val activity = launch()
+        try {
+            val session = main { state(activity) }
+            val tablet = main { activity.resources.configuration.smallestScreenWidthDp >= 600 }
+            fun verify() = main {
+                fun view(name: String) =
+                    MainActivity::class.java.getDeclaredField(name).run {
+                        isAccessible = true
+                        get(activity) as View
+                    }
+                val root = view("root") as ViewGroup
+                val header = view("header")
+                val status = view("statusLine")
+                val stage = view("stage")
+                val loadout = view("loadout")
+                assertEquals(1, descendants(root).count { it is NativeStatusView })
+                assertTrue("Arena status is visible", status.isShown && status.height > 0)
+                if (tablet) {
+                    assertTrue(
+                        "Tablet arena status sits below the arena",
+                        status.top >= stage.bottom,
+                    )
+                    assertEquals(
+                        "Tablet status is the bottom row",
+                        root.height - root.paddingBottom,
+                        status.bottom,
+                    )
+                } else {
+                    assertTrue(
+                        "Phone arena status sits below the main header",
+                        status.top >= header.bottom,
+                    )
+                    assertTrue("Phone status stays above the arena", status.bottom <= stage.top)
+                }
+                if (session.screen == Screen.PLAYING) {
+                    assertTrue("Loadout stays above the arena", loadout.bottom <= stage.top)
+                    assertTrue("Main header stays above the loadout", header.bottom <= loadout.top)
+                }
+                assertEquals(
+                    1,
+                    descendants(root).filterIsInstance<TextView>().count {
+                        it.isShown && "fps:" in it.text.toString()
+                    },
+                )
+                for (text in
+                    descendants(status).filterIsInstance<TextView>().filter { it.isShown }) {
+                    assertTrue(
+                        "Status text stays readable",
+                        text.textSize / activity.resources.displayMetrics.scaledDensity >= 10f,
+                    )
+                }
+                for (button in
+                    (descendants(header) + descendants(status)).filter {
+                        it.isShown && it.isClickable
+                    }) {
+                    val visible = android.graphics.Rect()
+                    assertTrue(
+                        "${button.contentDescription} is reachable",
+                        button.getGlobalVisibleRect(visible),
+                    )
+                    assertEquals(button.width, visible.width())
+                    assertEquals(button.height, visible.height())
+                }
+            }
+            for (mode in listOf("infinity", "elimination")) {
+                for (landscape in listOf(false, true)) {
+                    main {
+                        session.leave()
+                        session.publicSelected = false
+                        session.localSelected = true
+                        session.botCount = 0
+                        session.showFPS = true
+                        session.selectMode(mode)
+                        activity.requestedOrientation =
+                            if (landscape) ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                            else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    }
+                    await("Requested orientation is active") {
+                        activity.resources.configuration.orientation ==
+                            if (landscape) android.content.res.Configuration.ORIENTATION_LANDSCAPE
+                            else android.content.res.Configuration.ORIENTATION_PORTRAIT
+                    }
+                    SystemClock.sleep(250)
+                    verify()
+                    main { session.play() }
+                    awaitPlaying(activity)
+                    SystemClock.sleep(250)
+                    verify()
+                    screenshot(
+                        "arena-status-${if (tablet) "tablet" else "phone"}-$mode-${if (landscape) "landscape" else "portrait"}",
+                    )
+                }
+            }
+        } finally {
+            main { activity.finish() }
+        }
     }
 
     @Test

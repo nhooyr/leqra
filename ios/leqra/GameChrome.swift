@@ -73,6 +73,8 @@ struct GameHeader: View {
         }.buttonStyle(.plain)
             .frame(minHeight: NativePlatform.isDesktop ? 44 : nil)
             .padding(.horizontal, 4).padding(.bottom, landscape ? 5 : 10)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(showcase ? "showcaseHeader" : "gameHeader")
     }
     private var versionBadge: some View {
         ViewThatFits(in: .horizontal) {
@@ -93,6 +95,7 @@ struct ArenaStatusBar: View {
     @ObservedObject var session: GameSession
     var preview = false
     var showcase: ShowcaseScene?
+    var atBottom = false
     private var infinity: Bool {
         showcase != nil
             || (preview
@@ -144,6 +147,7 @@ struct ArenaStatusBar: View {
                     }
                 }.font(WebStyle.mono()).frame(maxWidth: .infinity)
                 Button("LEADERBOARD") { if showcase == nil { session.showScores.toggle() } }
+                    .buttonStyle(.plain)
                     .font(WebStyle.mono(10, weight: .semibold)).foregroundStyle(WebStyle.accent)
                     .padding(.horizontal, 7).frame(minHeight: 30)
                     .accessibilityIdentifier("toggleStandings")
@@ -166,7 +170,11 @@ struct ArenaStatusBar: View {
             }
         }.foregroundStyle(WebStyle.text).padding(.horizontal, 12).padding(.vertical, 8)
             .frame(minHeight: preview || !infinity ? 52 : 39).background(WebStyle.surface)
-            .overlay(alignment: .bottom) { WebStyle.border.frame(height: 1).allowsHitTesting(false) }
+            .overlay(alignment: atBottom ? .top : .bottom) {
+                WebStyle.border.frame(height: 1).allowsHitTesting(false)
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(showcase == nil ? "arenaStatusBar" : "showcaseStatusBar")
     }
     private var title: String {
         if let showcase { return showcase.title }

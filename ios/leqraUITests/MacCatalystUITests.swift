@@ -246,6 +246,42 @@ final class MacCatalystUITests: XCTestCase {
     }
 
     @MainActor
+    func testDesktopStatusStaysBelowReadyRoomGameAndShowcase() {
+        func assertFooter(
+            _ app: XCUIApplication, content: String, status: String = "arenaStatusBar",
+            header: String = "gameHeader"
+        ) {
+            let body = app.descendants(matching: .any)[content].firstMatch
+            let footer = app.descendants(matching: .any)[status].firstMatch
+            let top = app.descendants(matching: .any)[header].firstMatch
+            XCTAssertTrue(body.waitForExistence(timeout: 5))
+            XCTAssertTrue(footer.waitForExistence(timeout: 5))
+            XCTAssertEqual(app.descendants(matching: .any).matching(identifier: status).count, 1)
+            XCTAssertLessThanOrEqual(top.frame.maxY, body.frame.minY + 1)
+            XCTAssertGreaterThanOrEqual(footer.frame.minY, body.frame.maxY - 1)
+            XCTAssertLessThanOrEqual(footer.frame.maxY, app.windows.firstMatch.frame.maxY + 1)
+        }
+        let ready = launch()
+        assertFooter(ready, content: "readyRoomScroll")
+        capture(ready, name: "Mac ready-room status footer")
+        ready.buttons.matching(NSPredicate(format: "label == 'Controls'")).firstMatch.click()
+        let showcase = ready.buttons["openShowcase"]
+        reveal(showcase, in: ready)
+        showcase.click()
+        assertFooter(ready, content: "showcaseStage", status: "showcaseStatusBar", header: "showcaseHeader")
+        XCTAssertFalse(ready.descendants(matching: .any)["arenaStatusBar"].isHittable)
+        capture(ready, name: "Mac showcase status footer")
+        ready.terminate()
+        for fixed in [true, false] {
+            let app = launch(probe: true, fixed: fixed)
+            assertFooter(app, content: "arenaStage")
+            XCTAssertTrue(app.descendants(matching: .any)["gameScore"].exists)
+            capture(app, name: "Mac \(fixed ? "fixed" : "Infinity") status footer")
+            app.terminate()
+        }
+    }
+
+    @MainActor
     func testPauseCardKeepsItsBorderAndActionsInsideAShortWindow() {
         let app = launch(probe: true, fixed: true)
         defer { app.terminate() }
