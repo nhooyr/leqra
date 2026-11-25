@@ -3156,6 +3156,9 @@ final class GameUITests: XCTestCase {
 
     @MainActor
     private func capture(_ app: XCUIApplication, name: String) {
+        // Local Xcode runs retain screenshots. Set TEST_RUNNER_LEQRA_UI_SCREENSHOTS=0
+        // to skip these optional captures.
+        guard ProcessInfo.processInfo.environment["LEQRA_UI_SCREENSHOTS"] != "0" else { return }
         // Application screenshots can crop a rotated UIKit window using its
         // portrait backing dimensions. Capture the display to retain the full
         // native landscape surface, including controls at both screen edges.

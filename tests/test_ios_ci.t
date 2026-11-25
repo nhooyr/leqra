@@ -19,7 +19,8 @@ my $stage=$name eq 'swift' ? ($ARGV[0] eq 'test' ? 'core' : $ARGV[-2])
 sub record {
     my ($operation)=@_;
     open my $trace,'>>',$ENV{IOS_TRACE} or die $!;
-    my $line=encode_json({stage=>$operation,args=>\@ARGV,cwd=>getcwd(),pid=>$$,parent=>getppid()})."\n";
+    my $line=encode_json({stage=>$operation,args=>\@ARGV,cwd=>getcwd(),pid=>$$,parent=>getppid(),
+        screenshots=>$ENV{TEST_RUNNER_LEQRA_UI_SCREENSHOTS}})."\n";
     syswrite($trace,$line)==length($line) or die 'short trace write';
     close $trace or die $!;
 }
@@ -86,6 +87,8 @@ sub run_ci {
         IOS_BLOCK_STAGE => $options{block} // 'list',
         IOS_FAIL        => $options{fail}  // '',
     );
+    delete $env{TEST_RUNNER_LEQRA_UI_SCREENSHOTS};
+    $env{TEST_RUNNER_LEQRA_UI_SCREENSHOTS} = $options{screenshots} if exists $options{screenshots};
     my $result = run_cmd(
         [ 'sh', "$project/ci/ios.sh" ],
         cwd => "$tmp/unrelated directory",
@@ -136,6 +139,14 @@ subtest 'shared regression tests and app compilation overlap simulator startup' 
     ok( grep( /^ARCHS=\S+$/,                @{ $build->{args} } ), 'compile the runner architecture' );
     ok( grep( $_ eq 'ONLY_ACTIVE_ARCH=YES', @{ $build->{args} } ), 'avoid a second simulator architecture' );
     my $ui = stage( $events, 'test-without-building' );
+
+    for my $event (@$events) {
+        is(
+            $event->{screenshots},
+            $event->{stage} eq 'test-without-building' ? '0' : undef,
+            "$event->{stage} receives the screenshot default only for UI regression tests"
+        );
+    }
     is( flag( $ui, '-destination' ), 'id=fixture-iphone', 'UI regression tests use the selected simulator' );
     is( flag( $ui, '-parallel-testing-enabled' ), 'NO',   'one simulator regression test session' );
     is(
@@ -166,6 +177,14 @@ subtest 'shared regression tests and app compilation overlap simulator startup' 
     is_deeply( remaining_files($tmp), [], 'temporary simulator identifier is removed' );
 };
 
+subtest 'local UI screenshot opt-in is preserved' => sub {
+    my ( $tmp,    $project ) = fixture();
+    my ( $result, $events )  = run_ci( $tmp, $project, screenshots => '1' );
+    is( $result->{code}, 0, $result->{err} );
+    is( stage( $events, 'test-without-building' )->{screenshots},
+        '1', 'UI regression tests retain the explicit screenshot opt-in' );
+};
+
 subtest 'foreground failures cancel and reap simulator startup without saving a cache' => sub {
     for my $case (
         [ 'restore', 'list' ],
@@ -193,6 +212,11 @@ subtest 'simulator and UI failures prevent later stages and cache saves' => sub 
         my ( $tmp,    $project ) = fixture();
         my ( $result, $events )  = run_ci( $tmp, $project, fail => $failure );
         isnt( $result->{code}, 0, "$failure fails the CI entrypoint" );
+        if ( $failure eq 'test-without-building' ) {
+            is( $result->{code}, 29, 'UI regression test failure preserves its exit status' );
+            is( stage( $events, $failure )->{screenshots},
+                '0', 'disabling optional screenshots does not hide UI regression test failures' );
+        }
         ok( !stage( $events, 'save' ),                  'no cache metadata saved after failure' );
         ok( !stage( $events, 'test-without-building' ), 'simulator failure prevents UI launch' )
           unless $failure eq 'test-without-building';

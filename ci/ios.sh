@@ -49,7 +49,8 @@ wait "$simulator_pid"
 simulator_pid=
 simulator=$(cat "$simulator_file")
 
-xcodebuild "$@" -destination "id=$simulator" \
+TEST_RUNNER_LEQRA_UI_SCREENSHOTS="${TEST_RUNNER_LEQRA_UI_SCREENSHOTS:-0}" \
+	xcodebuild "$@" -destination "id=$simulator" \
 	-resultBundlePath "$ci_tmpdir/leqra-ios-tests.xcresult" \
 	-parallel-testing-enabled NO \
 	-only-testing:leqraUITests/GameUITests/testUnchangedOfflineCallsignResumeKeepsItsBattleWithoutAnAccountKey \
