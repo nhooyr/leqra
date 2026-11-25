@@ -56,6 +56,41 @@ async function checkStatusPlacement(page, arena, label) {
   else assert.ok(data.status.bottom <= data.stage.top + 1, label + " phone status moved below the maze")
   assert.ok(data.status.bottom <= data.height + 1, label + " status outside viewport")
 }
+async function checkPreviewCoverage(page, label) {
+  await page.evaluate(() => {
+    const toggle = document.querySelector("#infinityToggle")
+    toggle.checked = true
+    toggle.dispatchEvent(new Event("change", { bubbles: true }))
+  })
+  await page.waitForFunction(() => document.body.classList.contains("infinity-preview"))
+  const data = await page.evaluate(() => {
+    const stage = document.querySelector(".arena-stage").getBoundingClientRect(),
+      wrap = document.querySelector(".arena-wrap").getBoundingClientRect(),
+      canvas = document.querySelector("#arena").getBoundingClientRect(),
+      hud = document.querySelector(".underbar")
+    return {
+      stage: stage.bottom,
+      wrap: wrap.bottom,
+      canvas: canvas.bottom,
+      hudHeight: hud.getBoundingClientRect().height,
+      hudDisplay: getComputedStyle(hud).display,
+      touch: document.body.classList.contains("touch-ui"),
+    }
+  })
+  if (!data.touch) {
+    assert.equal(data.hudDisplay, "none", label + " inactive HUD still reserves preview space")
+    assert.equal(data.hudHeight, 0, label + " blank strip below preview")
+    assert.ok(Math.abs(data.stage - data.wrap) < 1, label + " preview does not fill the stage")
+  }
+  assert.ok(Math.abs(data.canvas - data.wrap) < 1, label + " preview canvas leaves a bottom gap")
+  await checkStatusPlacement(page, "fixed", label + " preview")
+  await page.screenshot({ path: path.join(output, label.replace(/[^a-z0-9]+/gi, "-") + "-preview.png") })
+  await page.evaluate(() => {
+    const toggle = document.querySelector("#infinityToggle")
+    toggle.checked = false
+    toggle.dispatchEvent(new Event("change", { bubbles: true }))
+  })
+}
 async function checkHUD(page, arena, variant, label) {
   const data = await page.evaluate(
     ({ arena, variant, names }) => {
@@ -218,6 +253,7 @@ async function checkHUD(page, arena, variant, label) {
       await page.goto(url.href)
       await page.waitForFunction(() => window.__test)
       await checkStatusPlacement(page, "fixed", name + " " + width + "x" + height + " ready room")
+      await checkPreviewCoverage(page, name + " " + width + "x" + height)
       await page.evaluate((names) => {
         window.requestAnimationFrame = () => 0
         const T = __test

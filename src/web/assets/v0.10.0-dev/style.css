@@ -3744,6 +3744,9 @@ body.room-setup .underbar {
   visibility: hidden;
   pointer-events: none;
 }
+body.room-setup.infinity-preview:not(.touch-ui) .underbar {
+  display: none;
+}
 @media (max-width: 560px) {
   .two-pilots .cooldown-line {
     grid-column: 1 / -1;
