@@ -102,6 +102,37 @@ jobs:
           if-no-files-found: ignore
           path: ${{ runner.temp }}/leqra-ios-tests.xcresult
 
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          lfs: true
+      - run: ./ci/ios-cache-key.sh
+        id: macos-cache
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ${{ runner.temp }}/leqra-macos-inputs.json
+            ${{ runner.temp }}/leqra-macos-swift
+            ${{ runner.temp }}/leqra-macos/Build
+            ${{ runner.temp }}/leqra-macos/ModuleCache.noindex
+            ${{ runner.temp }}/leqra-macos/SDKStatCaches.noindex
+            ${{ runner.temp }}/leqra-macos/SDKExplicitPrecompiledModules
+            ${{ runner.temp }}/leqra-macos/CompilationCache.noindex
+            ${{ runner.temp }}/leqra-macos/SourcePackages
+          key: macos-${{ runner.os }}-${{ runner.arch }}-${{ steps.macos-cache.outputs.toolchain }}-${{ hashFiles('ios/**', 'ci/macos.sh', 'ci/ios-cache.swift', 'scripts/ios-version.sh', 'scripts/version.sh', 'src/main.go') }}
+          restore-keys: |
+            macos-${{ runner.os }}-${{ runner.arch }}-${{ steps.macos-cache.outputs.toolchain }}-
+      - run: ./ci/macos.sh
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: macos-build-results
+          retention-days: 7
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/leqra-macos-tests.xcresult
+
   android:
     runs-on: ubuntu-latest
     steps:
