@@ -345,6 +345,7 @@ struct NativeGameView: UIViewRepresentable {
     var showsTouchControls = !NativePlatform.isDesktop
     var mouseTargetScene: GameScene? = nil
     var renderingSuspended = false
+    var controlBottomInset: CGFloat = 0
 
     func makeUIView(context: Context) -> UIView {
         let container = KeyboardGameContainer(scene: scene)
@@ -359,7 +360,8 @@ struct NativeGameView: UIViewRepresentable {
     private func configure(_ container: KeyboardGameContainer) {
         scene.configureLayout(
             infinity: infinity, landscape: landscape,
-            spectating: spectating, showsTouchControls: showsTouchControls)
+            spectating: spectating, showsTouchControls: showsTouchControls,
+            controlBottomInset: controlBottomInset)
         container.configure(
             scene: scene, highFrameRate: highFrameRate, paused: paused, spectating: spectating,
             hardwareScene: hardwareInputScene ?? scene, acceptsHardware: acceptsHardware,
@@ -383,6 +385,12 @@ private final class KeyboardGameContainer: UIView {
     private weak var mouseScene: GameScene?
     private var gameScene: GameScene? { gameView.scene as? GameScene }
     private var inputObservers: [NSObjectProtocol] = []
+    private let probesLayout = ProcessInfo.processInfo.arguments.contains("--probe-native-layout")
+
+    override var accessibilityValue: String? {
+        get { probesLayout ? gameScene?.layoutProbeValue : super.accessibilityValue }
+        set { super.accessibilityValue = newValue }
+    }
 
     init(scene: GameScene) {
         super.init(frame: .zero)
@@ -472,7 +480,7 @@ private final class KeyboardGameContainer: UIView {
         self.secondaryHardwareScene = secondaryHardwareScene
         self.mouseScene = mouseScene
         self.acceptsHardware = acceptsHardware
-        isAccessibilityElement = !paused
+        isAccessibilityElement = !paused || probesLayout
         isUserInteractionEnabled = !paused && !spectating
         gameView.isUserInteractionEnabled = !paused && !spectating
         if gameView.scene !== scene { gameView.presentScene(scene) }

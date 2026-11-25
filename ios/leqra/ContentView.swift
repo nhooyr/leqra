@@ -10,6 +10,8 @@ struct ContentView: View {
     var body: some View {
         GeometryReader { geometry in
             let landscape = geometry.size.width > geometry.size.height
+            let immersive = !statusAtBottom && session.screen == .playing
+            let bottomInset = immersive ? geometry.safeAreaInsets.bottom : 0
             ZStack {
                 WebStyle.page.ignoresSafeArea()
                 Group {
@@ -17,16 +19,18 @@ struct ContentView: View {
                         GameHeader(
                             session: session, landscape: landscape, availableWidth: geometry.size.width)
                         if session.readyRoom {
-                            readyRoom(landscape: landscape)
+                            readyRoom(landscape: landscape, bottomInset: bottomInset)
                         } else if session.screen == .connecting {
                             connecting
                         } else {
-                            game(landscape: landscape)
+                            game(landscape: landscape, bottomInset: bottomInset)
                         }
                     }.padding(.horizontal, session.screen == .playing && session.isInfinity ? 0 : 9)
                         .padding(.top, landscape ? 5 : 9).padding(
-                            .bottom, session.screen == .playing && session.isInfinity ? 0 : 8
+                            .bottom,
+                            immersive || session.screen == .playing && session.isInfinity ? 0 : 8
                         )
+                        .ignoresSafeArea(.container, edges: immersive ? .bottom : [])
                         .allowsHitTesting(
                             !session.paused && !session.showRules && !session.showControls
                                 && !session.showAccount && !session.showJoin && !session.showPresets
@@ -102,17 +106,19 @@ struct ContentView: View {
             .onChange(of: landscape) { session.configureShowcase(portrait: !$0) }
     }
 
-    private func readyRoom(landscape: Bool) -> some View {
+    private func readyRoom(landscape: Bool, bottomInset: CGFloat) -> some View {
         VStack(spacing: 0) {
             if !statusAtBottom { ArenaStatusBar(session: session, preview: true) }
             ZStack(alignment: .topTrailing) {
                 NativeGameView(
                     scene: session.scene, highFrameRate: false, paused: true, infinity: true,
                     landscape: landscape,
-                    renderingSuspended: session.showQuickTour
+                    renderingSuspended: session.showQuickTour, controlBottomInset: bottomInset
                 )
+                .accessibilityIdentifier("readyRoomStage")
                 .blur(radius: 2).overlay(WebStyle.sunken.opacity(0.58)).allowsHitTesting(false)
                 ReadyRoomView(session: session, landscape: landscape)
+                    .padding(.bottom, bottomInset)
                 if session.showScores { ArenaStandings(session: session, preview: true).padding(10) }
             }.onAppear { session.preparePreview() }
             if statusAtBottom { ArenaStatusBar(session: session, preview: true, atBottom: true) }
@@ -132,7 +138,7 @@ struct ContentView: View {
         }.frame(maxWidth: 400).padding(20).frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func game(landscape: Bool) -> some View {
+    private func game(landscape: Bool, bottomInset: CGFloat) -> some View {
         let split = session.isInfinity && session.secondaryLocalID != nil
         let canControl = !session.spectating || session.secondaryLocalID != nil
         let desktopPair = NativePlatform.isDesktop && !session.spectating && session.secondaryLocalID != nil
@@ -155,13 +161,13 @@ struct ContentView: View {
                 if split {
                     if landscape {
                         HStack(spacing: 1) {
-                            splitArena(seat: 0, landscape: landscape)
-                            splitArena(seat: 1, landscape: landscape)
+                            splitArena(seat: 0, landscape: landscape, bottomInset: bottomInset)
+                            splitArena(seat: 1, landscape: landscape, bottomInset: bottomInset)
                         }
                     } else {
                         VStack(spacing: 1) {
-                            splitArena(seat: 0, landscape: landscape)
-                            splitArena(seat: 1, landscape: landscape)
+                            splitArena(seat: 0, landscape: landscape, bottomInset: 0)
+                            splitArena(seat: 1, landscape: landscape, bottomInset: bottomInset)
                         }
                     }
                 } else {
@@ -176,7 +182,7 @@ struct ContentView: View {
                         showsTouchControls: !NativePlatform.isDesktop && !session.spectating,
                         mouseTargetScene: NativePlatform.isDesktop && !session.spectating
                             ? session.scene : nil,
-                        renderingSuspended: session.showQuickTour
+                        renderingSuspended: session.showQuickTour, controlBottomInset: bottomInset
                     )
                     .accessibilityIdentifier("arenaStage")
                 }
@@ -201,14 +207,14 @@ struct ContentView: View {
                 }
             }
             if statusAtBottom { ArenaStatusBar(session: session, atBottom: true) }
-        }.background(WebStyle.sunken).clipShape(RoundedRectangle(cornerRadius: session.isInfinity ? 0 : 9))
+        }.background(WebStyle.sunken).clipShape(RoundedRectangle(cornerRadius: 9))
             .overlay(
-                RoundedRectangle(cornerRadius: session.isInfinity ? 0 : 9).stroke(
+                RoundedRectangle(cornerRadius: 9).stroke(
                     session.isInfinity ? .clear : WebStyle.edge, lineWidth: 1
                 ).allowsHitTesting(false))
     }
 
-    private func splitArena(seat: Int, landscape: Bool) -> some View {
+    private func splitArena(seat: Int, landscape: Bool, bottomInset: CGFloat) -> some View {
         let desktopPair = NativePlatform.isDesktop && !session.spectating
         return VStack(spacing: 0) {
             NativeGameView(
@@ -220,7 +226,7 @@ struct ContentView: View {
                 acceptsHardware: seat == 0, showsTouchControls: !NativePlatform.isDesktop && seat == 0,
                 mouseTargetScene: NativePlatform.isDesktop && seat == 0
                     ? session.scene : session.secondaryScene,
-                renderingSuspended: session.showQuickTour
+                renderingSuspended: session.showQuickTour, controlBottomInset: bottomInset
             )
             .accessibilityIdentifier(seat == 0 ? "arenaStage" : "secondaryArenaStage")
         }.frame(maxWidth: .infinity, maxHeight: .infinity)

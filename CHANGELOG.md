@@ -10,6 +10,7 @@
 - Show arena status at the bottom on desktops and tablets, while phones keep it below the top header.
 - Fill the web start-menu maze preview to the bottom on desktop instead of reserving blank space for its hidden loadout.
 - Center fitting iOS and macOS start menus while keeping expanded menus scrollable, and use the blue iOS-style Public Infinity switch on macOS.
+- Extend phone gameplay mazes to the bottom edge with rounded corners, keep controls clear of the home indicator, and redraw framed start-menu previews after resizing.
 
 ## v0.9.4
 

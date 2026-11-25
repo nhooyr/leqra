@@ -1232,6 +1232,68 @@ final class GameUITests: XCTestCase {
     }
 
     @MainActor
+    func testPhoneArenaFillsBottomAndPreviewRedrawsAfterRotation() throws {
+        guard UIDevice.current.userInterfaceIdiom == .phone else {
+            throw XCTSkip("Phone scenes reach the screen edge; tablets retain their bottom status footer.")
+        }
+        let preview = launch(arguments: ["--probe-native-layout"])
+        for landscape in [false, true] {
+            XCUIDevice.shared.orientation = landscape ? .landscapeLeft : .portrait
+            waitForOrientation(preview, landscape: landscape)
+            let stage = preview.descendants(matching: .any)["readyRoomStage"].firstMatch
+            XCTAssertTrue(stage.waitForExistence(timeout: 5))
+            let covered = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in
+                    self.p2InputState(stage)["mapCoversViewport"] == 1
+                }, object: stage)
+            XCTAssertEqual(XCTWaiter.wait(for: [covered], timeout: 5), .completed)
+            XCTAssertLessThanOrEqual(stage.frame.maxY, preview.frame.maxY - 8)
+            XCTAssertEqual(
+                stage.frame.maxY, preview.scrollViews["readyRoomScroll"].frame.maxY, accuracy: 1)
+            XCTAssertGreaterThanOrEqual(stage.frame.minX, 8)
+            XCTAssertEqual(p2InputState(stage)["viewHeight"] ?? 0, stage.frame.height, accuracy: 1)
+            capture(preview, name: "Framed ready preview " + (landscape ? "landscape" : "portrait"))
+        }
+        preview.terminate()
+        for fixed in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments =
+                [
+                    "-serverURL", "http://127.0.0.1:1", "--public-session-test-namespace",
+                    "immersive-" + UUID().uuidString, "--reset-public-session-test-store",
+                    "--skip-public-session-restore", "--probe-direct-aim",
+                    "--probe-audio-off",
+                ] + (fixed ? ["--probe-fixed"] : [])
+            app.launch()
+            defer { app.terminate() }
+            XCTAssertTrue(app.buttons["pauseGame"].waitForExistence(timeout: 10))
+            for landscape in [false, true] {
+                let context = "\(fixed ? "Fixed" : "Infinity") \(landscape ? "landscape" : "portrait")"
+                XCUIDevice.shared.orientation = landscape ? .landscapeLeft : .portrait
+                waitForOrientation(app, landscape: landscape)
+                let stage = arena(in: app)
+                let values = p2InputState(stage)
+                let bottomInset = try XCTUnwrap(values["controlBottomInset"])
+                XCTAssertEqual(stage.frame.maxY, app.frame.maxY, accuracy: 1, context)
+                XCTAssertEqual(values["viewHeight"] ?? 0, stage.frame.height, accuracy: 1, context)
+                XCTAssertGreaterThan(bottomInset, 0, context)
+                XCTAssertEqual((values["controlCenterY"] ?? 0) - bottomInset, 63, accuracy: 1, context)
+                XCTAssertGreaterThanOrEqual((values["fireBottom"] ?? 0) - bottomInset, 8, context)
+                capture(app, name: "Immersive " + context)
+                pause(in: app)
+                let card = app.descendants(matching: .any)["pauseMenuCard"].firstMatch
+                XCTAssertTrue(card.waitForExistence(timeout: 5))
+                let leave = app.buttons["Leave game"]
+                reveal(leave, in: app)
+                XCTAssertLessThanOrEqual(leave.frame.maxY, app.frame.maxY - bottomInset - 8, context)
+                reveal(app.buttons["Resume"], in: app)
+                XCTAssertTrue(app.buttons["Resume"].isHittable, context)
+                app.buttons["Resume"].tap()
+            }
+        }
+    }
+
+    @MainActor
     func testUnlabelledControlsFitInPortraitAndLandscape() {
         for fixed in [false, true] {
             let app = XCUIApplication()
@@ -1262,7 +1324,7 @@ final class GameUITests: XCTestCase {
                     values["fireBottom"] ?? -1, 8,
                     "The complete readiness ring remains inside the stage")
                 XCTAssertLessThanOrEqual(
-                    values["controlCenterY"] ?? 999, 65,
+                    (values["controlCenterY"] ?? 999) - (values["controlBottomInset"] ?? 0), 65,
                     "The controls reclaim the former caption space")
                 capture(
                     app,

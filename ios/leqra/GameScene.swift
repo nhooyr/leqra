@@ -61,6 +61,8 @@ final class GameScene: SKScene {
     private var inputSources = LocalInputSources()
     private var showsTouchControls = true
     private var frozenShowcase: ShowcaseScene?
+    private var previewFrame: (snapshot: ArenaSnapshot, localID: Int, maze: InfiniteMaze)?
+    private var controlBottomInset: CGFloat = 0
     private var tankScreenPositions: [Int: CGPoint] = [:]
     private var mousePointer: CGPoint?
     private weak var mouseTarget: GameScene?
@@ -80,7 +82,18 @@ final class GameScene: SKScene {
     }
     var directAimProbePoint: CGPoint? { aimTankPosition.map { CGPoint(x: $0.x, y: size.height - $0.y) } }
     var controlLabelProbe: String {
-        "viewWidth=\(size.width),viewHeight=\(size.height),touchControls=\(showsTouchControls ? 1 : 0),controlLabels=\(controls.children.filter { $0 is SKLabelNode }.count),stickBottom=\(stickOrigin.y - 51 - stickKnob.lineWidth / 2),fireBottom=\(fireOrigin.y - 53.5 - fireTrackRing.lineWidth / 2),controlCenterY=\(fireOrigin.y),fireX=\(fireOrigin.x),fireY=\(fireOrigin.y),driveX=\(stickOrigin.x),driveY=\(stickOrigin.y),crosshairX=\(fireCrosshair.position.x),crosshairY=\(-fireCrosshair.position.y)"
+        "viewWidth=\(size.width),viewHeight=\(size.height),controlBottomInset=\(controlBottomInset),touchControls=\(showsTouchControls ? 1 : 0),controlLabels=\(controls.children.filter { $0 is SKLabelNode }.count),stickBottom=\(stickOrigin.y - 51 - stickKnob.lineWidth / 2),fireBottom=\(fireOrigin.y - 53.5 - fireTrackRing.lineWidth / 2),controlCenterY=\(fireOrigin.y),fireX=\(fireOrigin.x),fireY=\(fireOrigin.y),driveX=\(stickOrigin.x),driveY=\(stickOrigin.y),crosshairX=\(fireCrosshair.position.x),crosshairY=\(-fireCrosshair.position.y)"
+    }
+    var layoutProbeValue: String {
+        let rect = mapImage.frame
+        let low = convert(CGPoint(x: rect.minX, y: rect.minY), from: wallLayer)
+        let high = convert(CGPoint(x: rect.maxX, y: rect.maxY), from: wallLayer)
+        let imageBounds = CGRect(x: low.x, y: low.y, width: high.x - low.x, height: high.y - low.y)
+        let covered =
+            mapImage.texture != nil && cachedRegion?.contains(visibleWorldBounds) == true
+            && imageBounds.insetBy(dx: -0.5, dy: -0.5).contains(worldViewport)
+        return controlLabelProbe
+            + ",viewportBottom=\(worldViewport.minY),viewportHeight=\(worldViewport.height),mapCoversViewport=\(covered ? 1 : 0)"
     }
     private let emptyFireProbe = ProcessInfo.processInfo.arguments.contains("--probe-empty-fire-feedback")
     private(set) var layoutMode: LayoutMode = .infinity
@@ -99,7 +112,6 @@ final class GameScene: SKScene {
     private let controls = SKNode()
     private let grid = SKShapeNode()
     private let mapImage = SKSpriteNode()
-    private let controlBar = SKShapeNode()
     private let walls = SKShapeNode()
     private let wallShadows = SKShapeNode()
     private let stickBase = SKShapeNode(circleOfRadius: 57)
@@ -236,11 +248,6 @@ final class GameScene: SKScene {
         controls.addChild(fireTrackRing)
         fireReadyRing.position = fireButton.position
         controls.addChild(fireReadyRing)
-        controlBar.fillColor = UIColor(hex: 0x192127)
-        controlBar.strokeColor = UIColor(hex: 0x34434a)
-        controlBar.lineWidth = 1
-        controlBar.zPosition = -1
-        controls.addChild(controlBar)
         let crosshair = fireCrosshair
         let path = CGMutablePath()
         path.addEllipse(in: CGRect(x: -7, y: -7, width: 14, height: 14))
@@ -398,28 +405,32 @@ final class GameScene: SKScene {
     }
 
     override func didChangeSize(_ oldSize: CGSize) {
-        cachedRegion = nil
+        if previewFrame == nil { cachedRegion = nil }
         layoutControls()
-        if let frozenShowcase { displayShowcase(frozenShowcase) }
+        redrawStaticContent()
     }
 
     func configureLayout(
         infinity: Bool, landscape: Bool, spectating: Bool = false,
-        showsTouchControls: Bool = true
+        showsTouchControls: Bool = true, controlBottomInset: CGFloat = 0
     ) {
         let mode: LayoutMode = infinity ? .infinity : .fixed
+        let reusePreviewMap = previewFrame != nil && layoutMode == mode
         guard
             layoutMode != mode || self.landscape != landscape
                 || self.spectating != spectating || self.showsTouchControls != showsTouchControls
+                || self.controlBottomInset != controlBottomInset
         else { return }
         layoutMode = mode
         self.landscape = landscape
         self.spectating = spectating
         self.showsTouchControls = showsTouchControls
+        self.controlBottomInset = controlBottomInset
         controls.isHidden = spectating || !showsTouchControls
         if spectating { resetControls() }
-        cachedRegion = nil
+        if !reusePreviewMap { cachedRegion = nil }
         layoutControls()
+        redrawStaticContent()
     }
 
     func configureReadiness(label: String, progress: Double, locked: Bool) {
@@ -439,17 +450,14 @@ final class GameScene: SKScene {
     }
 
     private var worldViewport: CGRect {
-        let reserve =
-            layoutMode == .fixed && !landscape && !spectating && showsTouchControls
-            ? min(max(0, size.height - 60), 119) : 0
-        return CGRect(x: 0, y: reserve, width: max(1, size.width), height: max(1, size.height - reserve))
+        CGRect(x: 0, y: 0, width: max(1, size.width), height: max(1, size.height))
     }
 
     private func layoutControls() {
         let fixedPortrait = layoutMode == .fixed && !landscape
         // The complete readiness ring and fully deflected thumb fit above an
         // 8pt bottom inset; controls no longer reserve room for captions.
-        let bottom: CGFloat = 63
+        let bottom: CGFloat = 63 + controlBottomInset
         let left: CGFloat = fixedPortrait ? 27 : 18
         stickOrigin = CGPoint(x: left + 66, y: bottom)
         fireOrigin = CGPoint(x: size.width - left - (fixedPortrait ? 58.5 : 45.5), y: bottom)
@@ -470,8 +478,6 @@ final class GameScene: SKScene {
         fireButton.position = fireOrigin
         fireReadyRing.position = fireOrigin
         fireTrackRing.position = fireOrigin
-        controlBar.isHidden = !fixedPortrait
-        controlBar.path = CGPath(rect: CGRect(x: 0, y: 0, width: size.width, height: 119), transform: nil)
         // A screen-space label layer keeps names readable even when the map is
         // zoomed out on a small phone or in landscape.
         updateWorldScale()
@@ -584,6 +590,7 @@ final class GameScene: SKScene {
     }
 
     func resetWorld() {
+        previewFrame = nil
         resetControls()
         cancelMapPrefetch()
         hasCamera = false
@@ -641,10 +648,25 @@ final class GameScene: SKScene {
         }
     }
 
+    func displayPreview(snapshot: ArenaSnapshot, localID: Int, maze: InfiniteMaze) {
+        display(snapshot: snapshot, localID: localID, maze: maze)
+        previewFrame = (snapshot, localID, maze)
+    }
+
+    private func redrawStaticContent() {
+        if let frozenShowcase {
+            displayShowcase(frozenShowcase)
+        } else if let previewFrame {
+            displayPreview(
+                snapshot: previewFrame.snapshot, localID: previewFrame.localID, maze: previewFrame.maze)
+        }
+    }
+
     func display(
         snapshot: ArenaSnapshot, localID: Int, secondaryLocalID: Int? = nil, primaryLocalID: Int? = nil,
         maze: InfiniteMaze?, fixedWalls: [MazeWall] = [], showcase: ShowcaseScene? = nil
     ) {
+        previewFrame = nil
         let changedScene =
             (frozenShowcase != nil || showcase != nil)
             && (frozenShowcase?.seed != showcase?.seed

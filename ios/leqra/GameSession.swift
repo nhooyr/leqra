@@ -1193,7 +1193,7 @@ final class GameSession: ObservableObject {
                 ArenaPickup(id: 2, x: 42, y: 210, type: "shield"),
             ])
         scene.resetWorld()
-        scene.display(snapshot: preview, localID: 1, maze: previewMaze)
+        scene.displayPreview(snapshot: preview, localID: 1, maze: previewMaze)
     }
     var canResume: Bool { !disconnected && (spectating || !CallsignPolicy.reservedForBots(cleanName)) }
     private var onlineTitle: String {
