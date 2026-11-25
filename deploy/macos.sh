@@ -2,10 +2,34 @@
 set -eu
 cd "$(dirname "$0")/.."
 
+usage() {
+	printf 'Usage: %s [--app-store|--upload [output-directory]]\n' "${0##*/}"
+	printf 'Build and install locally using Apple development signing; export or upload with the optional flags.\n'
+}
+
+case "${1-}" in
+-h | --help | --fish-completions)
+	if [ "$#" -ne 1 ]; then
+		usage >&2
+		exit 1
+	fi
+	if [ "$1" = '--fish-completions' ]; then
+		printf '%s\n' \
+			"complete -c macos.sh -s h -l help -d 'Show usage'" \
+			"complete -c macos.sh -l app-store -d 'Export a Mac App Store package'" \
+			"complete -c macos.sh -l upload -d 'Upload to App Store Connect'" \
+			"complete -c macos.sh -l fish-completions -d 'Print Fish completions'"
+	else
+		usage
+	fi
+	exit 0
+	;;
+esac
+
 if [ "$#" -gt 0 ]; then
 	output_arg=${2-}
 	if { [ "$1" != '--app-store' ] && [ "$1" != '--upload' ]; } || [ "$#" -gt 2 ] || [ "${output_arg#--}" != "$output_arg" ]; then
-		printf 'Usage: %s [--app-store|--upload [output-directory]]\n' "${0##*/}" >&2
+		usage >&2
 		exit 1
 	fi
 	mode=$1
@@ -39,9 +63,9 @@ output="$PWD/bin/macos"
 install_dir=${LEQRA_MACOS_INSTALL_DIR:-"$HOME/Applications"}
 codesign=$(command -v codesign)
 xcodebuild -project ios/leqra.xcodeproj -scheme leqra \
-	-configuration Release -destination 'generic/platform=macOS,variant=Mac Catalyst' \
+	-configuration Release -destination 'platform=macOS,variant=Mac Catalyst' \
 	-derivedDataPath "$output/DerivedData" \
-	CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= ONLY_ACTIVE_ARCH=NO build
+	ONLY_ACTIVE_ARCH=NO -allowProvisioningUpdates -allowProvisioningDeviceRegistration build
 built="$output/DerivedData/Build/Products/Release-maccatalyst/leqra.app"
 "$codesign" --verify --deep --strict "$built"
 

@@ -17,7 +17,7 @@ use File::Path qw(make_path remove_tree);
 my $command=basename($0);
 my $operation=$command eq 'xcodebuild' ? $ARGV[-1] : $command;
 $operation='export' if grep { $_ eq '-exportArchive' } @ARGV;
-my $record={command=>$command,operation=>$operation,args=>\@ARGV,cwd=>getcwd(),home=>$ENV{HOME}};
+my $record={command=>$command,operation=>$operation,args=>\@ARGV,cwd=>getcwd(),home=>$ENV{HOME},team=>$ENV{DEVELOPMENT_TEAM}};
 if ($operation eq 'export') {
     my ($index)=grep { $ARGV[$_] eq '-exportOptionsPlist' } 0..$#ARGV;
     if (defined $index) {
@@ -122,6 +122,14 @@ subtest 'Mac CI compiles Catalyst regression tests without launching a GUI' => s
     );
     ok( grep( $_ eq 'CODE_SIGN_IDENTITY=-', @{ $events->[2]{args} } ), 'CI uses local signing' );
     ok(
+        grep( $_ eq 'CODE_SIGN_ENTITLEMENTS=', @{ $events->[2]{args} } ),
+        'compile-only CI does not request provisioned Keychain access'
+    );
+    ok(
+        !grep( $_ eq '-allowProvisioningUpdates', @{ $events->[2]{args} } ),
+        'compile-only CI does not provision a developer account'
+    );
+    ok(
         grep( $_ eq 'ENABLE_HARDENED_RUNTIME=NO', @{ $events->[2]{args} } ),
         'ad-hoc CI runner can load its regression test bundle'
     );
@@ -148,7 +156,7 @@ sub installed_fixture {
     return $install;
 }
 
-subtest 'default Mac deployment builds and atomically installs a local universal app' => sub {
+subtest 'default Mac deployment preserves signing and atomically installs a local universal app' => sub {
     for my $existing ( 0, 1 ) {
         my ( $tmp, $project ) = fixture();
         my $install = installed_fixture($tmp);
@@ -156,7 +164,7 @@ subtest 'default Mac deployment builds and atomically installs a local universal
             require File::Path;
             File::Path::remove_tree("$install/leqra.app");
         }
-        my ( $result, $events ) = run_script( $tmp, $project, 'deploy/macos.sh', [] );
+        my ( $result, $events ) = run_script( $tmp, $project, 'deploy/macos.sh', [], team => 'KEYCHAINTEAM' );
         is( $result->{code}, 0, $result->{err} );
         my @builds = grep { $_->{command} eq 'xcodebuild' } @$events;
         is( scalar @builds, 1, 'one build, no archive or export' );
@@ -165,14 +173,24 @@ subtest 'default Mac deployment builds and atomically installs a local universal
         is( flag( $build, '-configuration' ), 'Release', 'release optimization' );
         is(
             flag( $build, '-destination' ),
-            'generic/platform=macOS,variant=Mac Catalyst',
-            'native Catalyst build'
+            'platform=macOS,variant=Mac Catalyst',
+            'provision the current Mac while building Catalyst'
         );
-        ok( grep( $_ eq 'ONLY_ACTIVE_ARCH=NO',  @{ $build->{args} } ), 'universal architecture selection' );
-        ok( grep( $_ eq 'CODE_SIGN_IDENTITY=-', @{ $build->{args} } ), 'local ad-hoc signing' );
-        ok( grep( $_ eq 'DEVELOPMENT_TEAM=',    @{ $build->{args} } ), 'no distribution team required' );
-        ok( !grep( $_ eq '-allowProvisioningUpdates', @{ $build->{args} } ),
-            'local build needs no developer account changes' );
+        ok( grep( $_ eq 'ONLY_ACTIVE_ARCH=NO', @{ $build->{args} } ), 'universal architecture selection' );
+        ok(
+            !grep( /\A(?:CODE_SIGN_IDENTITY|CODE_SIGNING_ALLOWED|CODE_SIGN_ENTITLEMENTS|DEVELOPMENT_TEAM)=/,
+                @{ $build->{args} } ),
+            'local app retains project signing, team and Keychain entitlements'
+        );
+        ok(
+            grep( $_ eq '-allowProvisioningUpdates', @{ $build->{args} } ),
+            'local app can obtain the profile required for Keychain access'
+        );
+        ok(
+            grep( $_ eq '-allowProvisioningDeviceRegistration', @{ $build->{args} } ),
+            'local app can register this Mac with the development profile'
+        );
+        is( $build->{team}, 'KEYCHAINTEAM', 'caller development team is retained' );
         is(
             read_text("$project/bin/macos/leqra.app/Contents/MacOS/leqra"),
             "new local build\n",
@@ -190,6 +208,16 @@ subtest 'default Mac deployment builds and atomically installs a local universal
         is( $_->{home}, $ENV{HOME}, 'HOME unchanged' ) for @$events;
         ok( !grep( $_->{command} eq 'open', @$events ), 'installed app is not launched' );
     }
+};
+
+subtest 'Mac Keychain access uses the provisioned application identity' => sub {
+    my $entitlements = read_text( root() . '/ios/leqra/leqra-mac.entitlements' );
+    my $group        = '$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)';
+    like(
+        $entitlements,
+        qr{<key>keychain-access-groups</key>\s*<array>\s*<string>\Q$group\E</string>\s*</array>},
+        'Keychain access group follows the signing prefix and bundle identifier'
+    );
 };
 
 subtest 'failed local Mac builds and verification preserve the installed app' => sub {
@@ -339,6 +367,43 @@ subtest 'local Mac export resets a reused upload directory to export mode' => su
         "old installed build\n",
         'repeated distribution commands never install'
     );
+};
+
+subtest 'Mac deployment help and Fish completions do no build or install work' => sub {
+    for my $option ( '-h', '--help', '--fish-completions' ) {
+        my ( $tmp, $project ) = fixture();
+        my $install = installed_fixture($tmp);
+        my ( $result, $events ) = run_script( $tmp, $project, 'deploy/macos.sh', [$option] );
+        is( $result->{code}, 0, "$option succeeds" );
+        is_deeply( $events, [], "$option invokes no build, signing or launch command" );
+        is(
+            read_text("$install/leqra.app/Contents/MacOS/leqra"),
+            "old installed build\n",
+            "$option preserves the installed app"
+        );
+        ok( !-e "$project/bin/macos", "$option creates no build output" );
+        if ( $option eq '--fish-completions' ) {
+            unlike( $result->{out}, qr/Usage:/, 'completion output contains only Fish commands' );
+            my @lines = grep { length } split /\n/, $result->{out};
+            ok( @lines && !grep( !/^complete -c macos\.sh /, @lines ),
+                'completion commands target macos.sh' );
+            like( $result->{out}, qr/ -s h -l help /, 'completion includes help' );
+            like( $result->{out}, qr/ -l \Q$_\E /,    "completion includes $_" )
+              for qw(app-store upload fish-completions);
+        }
+        else {
+            like(
+                $result->{out},
+                qr/Usage: macos\.sh .*--app-store\|--upload/,
+                'usage describes store modes'
+            );
+            like( $result->{out}, qr/Apple development signing/, 'help explains local signing' );
+        }
+        my ( $invalid, $invalid_events ) =
+          run_script( $tmp, $project, 'deploy/macos.sh', [ $option, 'extra' ] );
+        isnt( $invalid->{code}, 0, "$option rejects an extra argument" );
+        is_deeply( $invalid_events, [], 'invalid help invocation performs no tool actions' );
+    }
 };
 
 subtest 'store failures stop and invalid arguments do no work' => sub {
