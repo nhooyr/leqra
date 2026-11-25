@@ -31,7 +31,7 @@ struct ReadyRoomView: View {
                     }
                 }.frame(maxWidth: landscape ? 650 : 420)
                     .accessibilityElement(children: .contain).accessibilityIdentifier("readyRoomCard")
-                    .padding(12).frame(maxWidth: .infinity)
+                    .padding(12).frame(maxWidth: .infinity, minHeight: geometry.size.height)
             }.frame(width: geometry.size.width, height: geometry.size.height)
                 .accessibilityIdentifier("readyRoomScroll")
                 .scrollDismissesKeyboard(.interactively)

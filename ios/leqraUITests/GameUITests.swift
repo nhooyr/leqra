@@ -1705,6 +1705,54 @@ final class GameUITests: XCTestCase {
     }
 
     @MainActor
+    func testPauseCardKeepsItsBorderAndActionsVisibleInBothOrientations() throws {
+        for fixed in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments =
+                [
+                    "-serverURL", "http://127.0.0.1:1", "--public-session-test-namespace",
+                    "pause-layout-" + UUID().uuidString, "--reset-public-session-test-store",
+                    "--skip-public-session-restore", "--probe-direct-aim", "--probe-audio-off",
+                ] + (fixed ? ["--probe-fixed"] : [])
+            XCUIDevice.shared.orientation = .portrait
+            app.launch()
+            defer { app.terminate() }
+            XCTAssertTrue(app.buttons["pauseGame"].waitForExistence(timeout: 10))
+            for landscape in [false, true] {
+                let context = "\(fixed ? "Fixed" : "Infinity") \(landscape ? "landscape" : "portrait")"
+                XCUIDevice.shared.orientation = landscape ? .landscapeLeft : .portrait
+                waitForOrientation(app, landscape: landscape)
+                pause(in: app)
+                let card = app.descendants(matching: .any)["pauseMenuCard"].firstMatch
+                XCTAssertTrue(card.waitForExistence(timeout: 5), context)
+                XCTAssertTrue(
+                    app.frame.contains(card.frame),
+                    "The entire bordered pause card stays inside the display: " + context)
+                let leave = app.buttons["Leave game"]
+                reveal(leave, in: app)
+                XCTAssertTrue(leave.isHittable, context)
+                XCTAssertGreaterThanOrEqual(card.frame.maxY - leave.frame.maxY, 20, context)
+                capture(app, name: context + " pause border and actions")
+                let scroll = app.scrollViews.containing(.button, identifier: "Leave game").firstMatch
+                if !fixed {
+                    XCTAssertTrue(scroll.exists, "The long Infinity menu scrolls: " + context)
+                    // SwiftUI exposes the scroll viewport for this identifier;
+                    // WebPanel's 22-point border padding surrounds that viewport.
+                    XCTAssertTrue(app.frame.insetBy(dx: 30, dy: 30).contains(scroll.frame), context)
+                    let lastText = try XCTUnwrap(scroll.staticTexts.allElementsBoundByIndex.last)
+                    reveal(lastText, in: app)
+                    XCTAssertTrue(lastText.isHittable, context)
+                    XCTAssertTrue(scroll.frame.insetBy(dx: -1, dy: -1).contains(lastText.frame), context)
+                    XCTAssertTrue(app.frame.contains(card.frame), context)
+                    capture(app, name: context + " pause scrolled to bottom")
+                }
+                reveal(app.buttons["Resume"], in: app)
+                app.buttons["Resume"].tap()
+            }
+        }
+    }
+
+    @MainActor
     func testInfinityPauseUsesDifficultyLabelsAndLocalIdentity() {
         let name = String(repeating: "界", count: 16)
         let app = launch(callsign: name)
@@ -1712,7 +1760,7 @@ final class GameUITests: XCTestCase {
         selectMode("infinity", in: app)
         play(in: app)
         pause(in: app)
-        let scroll = app.scrollViews["pauseMenuScroll"]
+        let scroll = app.scrollViews.containing(.button, identifier: "Leave game").firstMatch
         for _ in 0..<5 where !app.staticTexts["LEADERBOARD"].isHittable { scroll.swipeUp() }
         XCTAssertTrue(
             app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", name + " (P1)")).firstMatch
@@ -2781,7 +2829,7 @@ final class GameUITests: XCTestCase {
     private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
         let modal = app.scrollViews["modalScroll"]
         let ready = app.scrollViews["readyRoomScroll"]
-        let pause = app.scrollViews["pauseMenuScroll"]
+        let pause = app.scrollViews.containing(.button, identifier: "Leave game").firstMatch
         let scroll = modal.exists ? modal : pause.exists ? pause : ready.exists ? ready : app
         for attempt in 0..<8 {
             let before = element.frame

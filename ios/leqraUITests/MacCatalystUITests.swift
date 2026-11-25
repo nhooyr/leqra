@@ -246,6 +246,47 @@ final class MacCatalystUITests: XCTestCase {
     }
 
     @MainActor
+    func testReadyRoomCentersAndKeepsExpandedContentReachable() {
+        let app = launch()
+        defer { app.terminate() }
+        let scroll = app.scrollViews["readyRoomScroll"]
+        let card = app.descendants(matching: .any)["readyRoomCard"].firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        waitUntil("The fitting start card is vertically centered") {
+            card.frame.height < scroll.frame.height
+                && abs(card.frame.midY - scroll.frame.midY) < 2
+        }
+        capture(app, name: "Mac centered start card and blue switch")
+        let toggle = app.descendants(matching: .any)["publicInfinityToggle"].firstMatch
+        let original = toggle.value as? String
+        XCTAssertNotNil(original)
+        toggle.click()
+        waitUntil("The blue Public Infinity switch changes state") { toggle.value as? String != original }
+        toggle.click()
+        waitUntil("The Public Infinity switch restores its state") { toggle.value as? String == original }
+        let window = app.windows.firstMatch
+        let before = window.frame
+        let corner = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 1))
+            .withOffset(CGVector(dx: -2, dy: -2))
+        corner.click(
+            forDuration: 0.15,
+            thenDragTo: corner.withOffset(CGVector(dx: 780 - before.width, dy: 480 - before.height)))
+        waitUntil("The start window reaches its compact height") { window.frame.height < 540 }
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Room settings'")).firstMatch.click()
+        waitUntil("Expanded content scrolls instead of clipping its top") {
+            card.frame.height > scroll.frame.height && card.frame.minY >= scroll.frame.minY - 1
+        }
+        let controls = app.buttons.matching(NSPredicate(format: "label == 'CONTROLS'")).firstMatch
+        for _ in 0..<8 where !scroll.frame.contains(controls.frame) {
+            scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                .scroll(byDeltaX: 0, deltaY: -250)
+        }
+        XCTAssertTrue(scroll.frame.contains(controls.frame))
+        XCTAssertTrue(controls.isHittable)
+        capture(app, name: "Mac compact expanded start card")
+    }
+
+    @MainActor
     func testDesktopStatusStaysBelowReadyRoomGameAndShowcase() {
         func assertFooter(
             _ app: XCUIApplication, content: String, status: String = "arenaStatusBar",

@@ -9,6 +9,7 @@
 - Aim the turret independently with the mouse while driving and turning with the keyboard on web, iOS, Android, and macOS.
 - Show arena status at the bottom on desktops and tablets, while phones keep it below the top header.
 - Fill the web start-menu maze preview to the bottom on desktop instead of reserving blank space for its hidden loadout.
+- Center fitting iOS and macOS start menus while keeping expanded menus scrollable, and use the blue iOS-style Public Infinity switch on macOS.
 
 ## v0.9.4
 

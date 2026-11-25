@@ -202,6 +202,7 @@ struct WebSwitch: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(isOn: $isOn) }
     func makeUIView(context: Context) -> UISwitch {
         let view = UISwitch()
+        view.preferredStyle = .sliding
         view.onTintColor = UIColor(red: 0, green: 200 / 255, blue: 1, alpha: 1)
         view.addTarget(context.coordinator, action: #selector(Coordinator.changed(_:)), for: .valueChanged)
         view.accessibilityLabel = "Public Infinity"
