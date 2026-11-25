@@ -4017,7 +4017,6 @@ class MainActivity : Activity() {
             if (event.repeatCount > 0 && keyCode !in pressed) return true
             if (event.isCtrlPressed || event.isAltPressed || event.isMetaPressed)
                 return super.onKeyDown(keyCode, event)
-            if (session.keyboardBindings.isTurn(keyCode)) arena.clearMouseAim()
             pressed.add(keyCode)
             keyboardInput()
             return true
@@ -4060,9 +4059,13 @@ class MainActivity : Activity() {
         val controls =
             if (keyboardSeat) session.keyboardBindings.input(pressed)
             else GameInput(touchAim = false)
-        gamepads
-            .inputForSeat(if (local) 1 else 0, controlOwner != null, controlLocalOwner != null)
-            ?.merge(controls)
+        val gamepad =
+            gamepads.inputForSeat(
+                if (local) 1 else 0,
+                controlOwner != null,
+                controlLocalOwner != null,
+            )
+        gamepad?.merge(controls)
         val analog = hypot(controls.stickX, controls.stickY) > .1
         if (
             !local &&
@@ -4070,30 +4073,32 @@ class MainActivity : Activity() {
         )
             arena.clearDirectAim()
         val touch = if (local) null else arena.input
+        val touchActive = touch != null && hypot(touch.stickX, touch.stickY) > .1
         val mouse = if (keyboardSeat) arena.mouseInput() else null
         if (touch != null) {
             controls.fire = controls.fire || touch.fire
             controls.aimX = touch.aimX
             controls.aimY = touch.aimY
         }
-        if (mouse != null) controls.fire = controls.fire || mouse.fire
-        if (touch != null && hypot(touch.stickX, touch.stickY) > .1) {
+        if (mouse != null) {
+            controls.fire = controls.fire || mouse.fire
+            if (
+                !touchActive &&
+                    !analog &&
+                    gamepad?.left != true &&
+                    gamepad?.right != true &&
+                    hypot(controls.aimX, controls.aimY) <= .1
+            ) {
+                controls.aimX = mouse.aimX
+                controls.aimY = mouse.aimY
+            }
+        }
+        if (touchActive && touch != null) {
             controls.stickX = touch.stickX
             controls.stickY = touch.stickY
             controls.touchAim = true
             controls.aimOnly = touch.aimOnly
             controls.snapAim = touch.snapAim
-        } else if (
-            !analog &&
-                mouse != null &&
-                hypot(mouse.stickX, mouse.stickY) > .1 &&
-                !controls.left &&
-                !controls.right
-        ) {
-            controls.stickX = mouse.stickX
-            controls.stickY = mouse.stickY
-            controls.aimOnly = true
-            controls.snapAim = !controls.forward && !controls.reverse
         }
         return controls
     }

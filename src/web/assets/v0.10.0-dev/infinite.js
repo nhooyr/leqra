@@ -450,21 +450,19 @@
         }
       }
     }
+    const pad = art.gamepadInput?.(seat === session.local ? 1 : 0),
+      padSteering = pad && (Math.hypot(pad.stickX, pad.stickY) > 0.1 || pad.left || pad.right)
     if (seat === mouseSeat()) {
       input.fire ||= mouseFireEnabled() && (mousePointer !== null || mouseTap)
       if (
         mouseAimEnabled() &&
         mouseAim &&
-        !input.left &&
-        !input.right &&
+        !padSteering &&
         (seat !== session || (stickPointer === null && !directAim.active))
       ) {
-        input.stickX = mouseAim.x
-        input.stickY = mouseAim.y
-        input.aimOnly = true
+        Object.assign(input, net.fireAimInput(mouseAim.x, mouseAim.y))
       }
     }
-    const pad = art.gamepadInput?.(seat === session.local ? 1 : 0)
     return pad
       ? art.mergeGamepad(input, pad, seat === session && (stickPointer !== null || directAim.active))
       : input
@@ -3770,6 +3768,7 @@
     }
     const { x, y } = position
     const distance = Math.hypot(x, y)
+    if (mouseSeat() === session && firePointer === null && directAim.id === null) directAim.active = false
     if (distance > 3) mouseAim = { x: x / distance, y: y / distance }
     return true
   }
@@ -3912,7 +3911,6 @@
       directAim.active = false
       directAim.id = null
     }
-    if (seat === mouseSeat() && (action === "left" || action === "right")) mouseAim = null
     if (action === "fire" && !padFireHeld(seat)) pressFire(event, seat)
     else sendInput(seat, performance.now(), true)
   })

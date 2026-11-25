@@ -61,18 +61,6 @@ final class MacCatalystUITests: XCTestCase {
         for fixed in [true, false] {
             let app = launch(probe: true, fixed: fixed)
             defer { app.terminate() }
-            if fixed {
-                app.buttons.matching(NSPredicate(format: "label == 'Controls'")).firstMatch.click()
-                let turn = app.buttons["bind0_right"]
-                reveal(turn, in: app)
-                turn.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
-                XCTAssertTrue(app.staticTexts["Press a key"].waitForExistence(timeout: 5))
-                app.windows.firstMatch.typeKey(XCUIKeyboardKey.shift, modifierFlags: [])
-                waitUntil("Turn right is remapped to Shift for simultaneous keyboard input") {
-                    !app.staticTexts["Press a key"].exists && turn.label.contains("SHIFT L")
-                }
-                app.buttons["Close Controls"].click()
-            }
             let stage = arena(app)
             let before = values(stage)
             XCTAssertEqual(before["touchControls"], 0, "Desktop gameplay does not show touch controls")
@@ -106,7 +94,7 @@ final class MacCatalystUITests: XCTestCase {
             }
             if fixed {
                 let beforeDrive = values(stage)
-                for _ in 0..<32 { stage.typeKey("w", modifierFlags: .shift) }
+                for _ in 0..<32 { stage.typeKey(XCUIKeyboardKey.upArrow, modifierFlags: []) }
                 waitUntil("The tank drives while the pointer stays still") {
                     let moved = self.values(stage)
                     return hypot(
@@ -114,12 +102,21 @@ final class MacCatalystUITests: XCTestCase {
                         (moved["y"] ?? 0) - (beforeDrive["y"] ?? 0)) > 0.5
                 }
                 let moved = values(stage)
+                XCTAssertGreaterThan(
+                    abs(angleDifference(moved["bodyAngle"] ?? 0, moved["angle"] ?? 0)), 0.1,
+                    "Arrow keys steer the hull independently of the mouse-aimed turret")
                 let movingAim = atan2(targetY - (moved["screenY"] ?? 0), targetX - (moved["screenX"] ?? 0))
                 XCTAssertGreaterThan(abs(angleDifference(movingAim, expected)), 0.02)
                 expected = movingAim
                 waitUntil("A stationary pointer keeps aiming at its screen position while driving") {
                     abs(self.angleDifference(self.values(stage)["angle"] ?? 99, movingAim)) < 0.02
                 }
+                for _ in 0..<8 { stage.typeKey(XCUIKeyboardKey.leftArrow, modifierFlags: []) }
+                let turned = settledValues(stage, angles: ["bodyAngle", "angle"])
+                XCTAssertGreaterThan(
+                    abs(angleDifference(turned["bodyAngle"] ?? 0, moved["bodyAngle"] ?? 0)), 0.05)
+                expected = atan2(targetY - (turned["screenY"] ?? 0), targetX - (turned["screenX"] ?? 0))
+                XCTAssertLessThan(abs(angleDifference(turned["angle"] ?? 99, expected)), 0.02)
             }
             let priorShot = values(stage)["shotID"] ?? 0
             target.click()

@@ -1731,19 +1731,35 @@ class MainActivityTest {
                     assertTrue(session.input2.fire)
                     key(KeyEvent.KEYCODE_Q, false)
                     mouse(android.view.MotionEvent.ACTION_HOVER_MOVE)
-                    assertTrue(session.input2.aimOnly)
+                    assertFalse(session.input2.aimOnly)
                     assertFalse(
                         "Mouse aim preserves held keyboard throttle",
                         session.input2.snapAim,
                     )
                     assertTrue(session.input2.forward)
-                    assertEquals(mouseDirection, session.input2.stickX, .001)
+                    assertEquals(0.0, session.input2.stickX, .001)
+                    assertEquals(mouseDirection, session.input2.aimX, .001)
+                    key(KeyEvent.KEYCODE_D, true)
+                    assertTrue("Keyboard turns P2's hull while aiming", session.input2.right)
+                    assertEquals(
+                        "Turning retains the mouse target",
+                        mouseDirection,
+                        session.input2.aimX,
+                        .001,
+                    )
+                    key(KeyEvent.KEYCODE_D, false)
                     key(KeyEvent.KEYCODE_W, false)
                     mouse(
                         android.view.MotionEvent.ACTION_DOWN,
                         android.view.MotionEvent.BUTTON_PRIMARY,
                     )
-                    assertTrue("Stationary mouse aim is exact", session.input2.snapAim)
+                    assertFalse(session.input2.snapAim)
+                    assertEquals(
+                        "Stationary mouse aim is independent",
+                        mouseDirection,
+                        session.input2.aimX,
+                        .001,
+                    )
                     assertTrue("Mouse fire belongs to P2", session.input2.fire)
                     assertTrue("Mouse cannot release P1 touch", session.input.fire)
                     mouse(android.view.MotionEvent.ACTION_UP)
@@ -1754,6 +1770,12 @@ class MainActivityTest {
                     mouse(
                         android.view.MotionEvent.ACTION_DOWN,
                         android.view.MotionEvent.BUTTON_PRIMARY,
+                    )
+                    assertEquals(
+                        "P2 mouse input cannot clear P1's retained touch aim",
+                        1.0,
+                        session.input.aimX,
+                        .001,
                     )
                     touch(android.view.MotionEvent.ACTION_DOWN)
                     key(KeyEvent.KEYCODE_W, true)
@@ -1800,6 +1822,241 @@ class MainActivityTest {
                 }
                 SystemClock.sleep(200)
                 screenshot("p2-input-$mode-${if (landscape) "landscape" else "portrait"}")
+            }
+        } finally {
+            main { activity.finish() }
+        }
+    }
+
+    @Test
+    fun mouseTurretAimKeepsKeyboardHullControls() {
+        val activity = launch()
+        try {
+            val session = main { state(activity) }
+            val view = main {
+                session.localSelected = false
+                session.botCount = 0
+                session.selectMode("infinity")
+                session.play()
+                MainActivity::class.java.getDeclaredField("arena").run {
+                    isAccessible = true
+                    get(activity) as NativeArenaView
+                }
+            }
+            awaitPlaying(activity)
+            main {
+                session.authoritativeSnapshot.tanks
+                    .first { it.id == session.localID }
+                    .apply {
+                        angle = 0.0
+                        bodyAngle = 0.0
+                        independentAim = false
+                        ghostTime = 60.0
+                        invulnerable = 60.0
+                        spawnProtected = false
+                        com.leqra.core.PracticeArena.applyPower(this, "cannon")
+                    }
+            }
+            SystemClock.sleep(150)
+            fun key(code: Int, down: Boolean) = main {
+                activity.dispatchKeyEvent(
+                    KeyEvent(if (down) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP, code),
+                )
+            }
+            fun mouse(action: Int, buttons: Int = 0) = main {
+                fun point(name: String) =
+                    NativeArenaView::class.java.getDeclaredField(name).run {
+                        isAccessible = true
+                        getFloat(view)
+                    } * view.resources.displayMetrics.density
+                val properties =
+                    MotionEvent.PointerProperties().apply {
+                        id = 0
+                        toolType = MotionEvent.TOOL_TYPE_MOUSE
+                    }
+                val coordinates =
+                    MotionEvent.PointerCoords().apply {
+                        x = point("mouseTankX")
+                        y = point("mouseTankY") - 70 * view.resources.displayMetrics.density
+                    }
+                val now = SystemClock.uptimeMillis()
+                val event =
+                    MotionEvent.obtain(
+                        now,
+                        now,
+                        action,
+                        1,
+                        arrayOf(properties),
+                        arrayOf(coordinates),
+                        0,
+                        buttons,
+                        1f,
+                        1f,
+                        0,
+                        0,
+                        InputDevice.SOURCE_MOUSE,
+                        0,
+                    )
+                try {
+                    if (action == MotionEvent.ACTION_HOVER_MOVE) view.onHoverEvent(event)
+                    else view.onTouchEvent(event)
+                } finally {
+                    event.recycle()
+                }
+            }
+            val startX = main { session.authoritativeSnapshot.tanks.first().x }
+            val startY = main { session.authoritativeSnapshot.tanks.first().y }
+            mouse(MotionEvent.ACTION_HOVER_MOVE)
+            key(KeyEvent.KEYCODE_DPAD_UP, true)
+            await("Up drives the hull east while the mouse aims north") {
+                val tank = session.authoritativeSnapshot.tanks.first()
+                tank.x > startX + 8 && tank.independentAim && abs(tank.angle + Math.PI / 2) < .03
+            }
+            main {
+                val tank = session.authoritativeSnapshot.tanks.first()
+                assertEquals("Mouse aiming does not steer the hull", 0.0, tank.bodyAngle, .03)
+                assertEquals(startY, tank.y, .1)
+                assertEquals(0.0, session.input.stickX, 0.0)
+                assertEquals(0.0, session.input.stickY, 0.0)
+            }
+            key(KeyEvent.KEYCODE_DPAD_RIGHT, true)
+            await("Right turns the hull without moving the mouse target") {
+                val tank = session.authoritativeSnapshot.tanks.first()
+                tank.bodyAngle > .35 && tank.independentAim && abs(tank.angle + Math.PI / 2) < .03
+            }
+            key(KeyEvent.KEYCODE_DPAD_RIGHT, false)
+            key(KeyEvent.KEYCODE_DPAD_UP, false)
+            mouse(MotionEvent.ACTION_DOWN, MotionEvent.BUTTON_PRIMARY)
+            await("Mouse fire follows the turret rather than the hull") {
+                session.authoritativeSnapshot.bullets.any {
+                    it.owner == session.localID && it.vy < 0 && abs(it.vx) < abs(it.vy) * .03
+                }
+            }
+            mouse(MotionEvent.ACTION_UP)
+            mouse(MotionEvent.ACTION_HOVER_EXIT)
+            key(KeyEvent.KEYCODE_DPAD_DOWN, true)
+            main {
+                assertTrue("Down retains reverse throttle", session.input.reverse)
+                assertEquals("Leaving the arena clears pointer aim", 0.0, session.input.aimX, 0.0)
+                assertEquals(0.0, session.input.aimY, 0.0)
+            }
+            key(KeyEvent.KEYCODE_DPAD_DOWN, false)
+            fun touch(action: Int, fire: Boolean = true, stick: Boolean = false) = main {
+                fun point(name: String) =
+                    NativeArenaView::class.java.getDeclaredField(name).run {
+                        isAccessible = true
+                        getFloat(view)
+                    } * view.resources.displayMetrics.density
+                val now = SystemClock.uptimeMillis()
+                val event =
+                    MotionEvent.obtain(
+                        now,
+                        now,
+                        action,
+                        point(if (stick) "stickX" else if (fire) "fireX" else "aimTankX") +
+                            30 * view.resources.displayMetrics.density,
+                        point(if (stick) "stickY" else if (fire) "fireY" else "aimTankY"),
+                        0,
+                    )
+                try {
+                    view.onTouchEvent(event)
+                } finally {
+                    event.recycle()
+                }
+            }
+            touch(MotionEvent.ACTION_DOWN)
+            mouse(MotionEvent.ACTION_HOVER_MOVE)
+            main {
+                assertEquals("Held touch Fire keeps aim priority", 1.0, session.input.aimX, .001)
+                assertEquals(0.0, session.input.aimY, .001)
+            }
+            touch(MotionEvent.ACTION_UP)
+            mouse(MotionEvent.ACTION_HOVER_MOVE)
+            main {
+                assertEquals(
+                    "Fresh mouse motion replaces released touch aim",
+                    0.0,
+                    session.input.aimX,
+                    .001,
+                )
+                assertEquals(-1.0, session.input.aimY, .001)
+                assertFalse("Switching aim does not keep firing", session.input.fire)
+            }
+            touch(MotionEvent.ACTION_DOWN, fire = false)
+            mouse(MotionEvent.ACTION_HOVER_MOVE)
+            main {
+                assertTrue("An active direct touch keeps its aim", session.input.snapAim)
+                assertEquals(0.0, session.input.aimX, 0.0)
+                assertEquals(0.0, session.input.aimY, 0.0)
+            }
+            touch(MotionEvent.ACTION_UP, fire = false)
+            main { assertTrue("Released direct touch retains its aim", session.input.snapAim) }
+            mouse(MotionEvent.ACTION_HOVER_MOVE)
+            main {
+                assertFalse(
+                    "Fresh mouse motion replaces released direct touch",
+                    session.input.snapAim,
+                )
+                assertEquals(0.0, session.input.stickX, 0.0)
+                assertEquals(0.0, session.input.stickY, 0.0)
+                assertEquals(-1.0, session.input.aimY, .001)
+            }
+            touch(MotionEvent.ACTION_DOWN, fire = false, stick = true)
+            mouse(MotionEvent.ACTION_HOVER_MOVE)
+            main {
+                assertTrue("Active touch steering keeps priority", session.input.stickX > .1)
+                assertEquals(0.0, session.input.aimX, 0.0)
+                assertEquals(0.0, session.input.aimY, 0.0)
+            }
+            touch(MotionEvent.ACTION_UP, fire = false, stick = true)
+            val pad = main {
+                MainActivity::class.java.getDeclaredField("gamepads").run {
+                    isAccessible = true
+                    (get(activity) as GamepadControls)
+                        .apply {
+                            updateDevices(listOf(-77), primary = true, secondary = false)
+                        }
+                        .inputForSeat(0, primary = true, secondary = false)!!
+                }
+            }
+            for (rightStick in listOf(false, true)) {
+                main {
+                    pad.motion(
+                        if (rightStick) 0.0 else 1.0,
+                        0.0,
+                        if (rightStick) 1.0 else 0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                    )
+                }
+                mouse(MotionEvent.ACTION_HOVER_MOVE)
+                main {
+                    assertEquals(
+                        "Gamepad analog steering keeps priority",
+                        1.0,
+                        session.input.stickX,
+                        .001,
+                    )
+                    assertEquals(0.0, session.input.aimX, 0.0)
+                    assertEquals(0.0, session.input.aimY, 0.0)
+                }
+            }
+            main {
+                pad.motion(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+                pad.key(KeyEvent.KEYCODE_DPAD_LEFT, down = true, repeat = false)
+            }
+            mouse(MotionEvent.ACTION_HOVER_MOVE)
+            main {
+                assertTrue("Gamepad turning keeps priority", session.input.left)
+                assertEquals(0.0, session.input.aimX, 0.0)
+                assertEquals(0.0, session.input.aimY, 0.0)
+                pad.key(KeyEvent.KEYCODE_DPAD_LEFT, down = false, repeat = false)
+            }
+            mouse(MotionEvent.ACTION_HOVER_MOVE)
+            main {
+                assertEquals("Neutral gamepad yields to the mouse", -1.0, session.input.aimY, .001)
             }
         } finally {
             main { activity.finish() }

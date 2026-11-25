@@ -203,7 +203,8 @@ test("paired touch devices route both keyboard layouts and mouse to P2 while tou
     assert.equal(s.primaryFireHeld(), false)
     assert.equal(s.secondaryFireHeld(), true)
     assert.equal(s.onlineControls().aimOnly, false)
-    assert.equal(s.onlineControls(true).aimOnly, true)
+    assert.equal(s.onlineControls(true).aimOnly, false)
+    assert.equal(s.onlineControls(true).aimY, 1)
     assert.equal(s.onlineControls().fire, false)
     assert.equal(s.onlineControls(true).fire, true)
     if (mode === "room") {
@@ -260,7 +261,8 @@ test("all four mouse aim and fire combinations are independent offline and onlin
         assert.equal(event.prevented, fire ? true : undefined)
         assert.equal(s.primaryFireHeld(), fire)
         const controls = s.onlineControls()
-        assert.equal(controls.aimOnly, aim)
+        assert.equal(controls.aimOnly, false)
+        assert.equal(controls.aimY || 0, aim ? 1 : 0)
         assert.equal(controls.fire, fire)
         if (mode === "room") {
           s.humanControl(p1, Net.STEP)
@@ -422,21 +424,24 @@ test("fixed offline steering and online controls both use touch assist for P1 on
   assert.equal(s.onlineControls().touchAim, undefined)
 })
 
-test("mouse steers only P1, preserves forward and reverse controls and yields to a keyboard turn", () => {
+test("mouse aims only P1's turret while keyboard movement and turning retain the body heading", () => {
   const { s, p1, p2, canvas, window } = boot()
   canvas.emit("pointermove")
   assert.ok(canvas.classList.contains("mouse-aiming"))
   s.humanControl(p1, Net.STEP)
   s.humanControl(p2, Net.STEP)
-  close(p1.angle, 5.8 * Net.STEP)
+  close(p1.angle, Math.PI / 2)
+  close(Net.bodyHeading(p1), 0)
   close(p2.angle, 0)
   close(p1.x, 100)
   close(p1.y, 100)
   window.emit("keydown", { code: "KeyW" })
   s.humanControl(p1, Net.STEP)
   close(Math.hypot(p1.x - 100, p1.y - 100), 128 * Net.STEP)
+  close(p1.y, 100)
+  close(p1.angle, s.mouseAimHeading(p1))
   window.emit("keyup", { code: "KeyW" })
-  const angle = p1.angle
+  const bodyAngle = Net.bodyHeading(p1)
   window.emit("keydown", { code: "ArrowRight" })
   s.humanControl(p2, Net.STEP)
   window.emit("keyup", { code: "ArrowRight" })
@@ -445,10 +450,12 @@ test("mouse steers only P1, preserves forward and reverse controls and yields to
   window.emit("keydown", { code: "KeyA" })
   s.humanControl(p1, Net.STEP)
   window.emit("keyup", { code: "KeyA" })
-  close(p1.angle, angle - 3.65 * Net.STEP)
-  assert.equal(s.mouseAim.active, false)
+  close(Net.bodyHeading(p1), bodyAngle - 3.65 * Net.STEP)
+  close(p1.angle, s.mouseAimHeading(p1))
+  assert.equal(s.mouseAim.active, true)
   s.humanControl(p1, Net.STEP)
-  close(p1.angle, angle - 3.65 * Net.STEP)
+  close(Net.bodyHeading(p1), bodyAngle - 3.65 * Net.STEP)
+  close(p1.angle, s.mouseAimHeading(p1))
   canvas.emit("pointermove", { offsetX: 10 + p1.x * 0.5, offsetY: 20 + p1.y * 0.5 })
   assert.equal(s.mouseAimHeading(p1), null, "the tank center has a small aiming dead zone")
 })
@@ -524,13 +531,15 @@ test("respawning cancels a queued mouse tap from the previous tank without cance
   assert.deepEqual(shots, [p2.id])
 })
 
-test("online mouse direction is aim-only and the existing fire edge sends an immediate press and release", () => {
+test("online mouse direction independently aims the turret and sends an immediate fire press and release", () => {
   const { s, p1, canvas, window, packets } = boot("online")
   canvas.emit("pointermove")
   let control = s.onlineControls()
-  assert.equal(control.aimOnly, true)
+  assert.equal(control.aimOnly, false)
   close(control.stickX, 0)
-  close(control.stickY, 1)
+  close(control.stickY, 0)
+  close(control.aimX, 0)
+  close(control.aimY, 1)
   assert.equal(control.forward, false)
   assert.deepEqual({ ...s.onlineControls(true) }, Net.neutral())
   s.stick.x = -1
@@ -538,6 +547,7 @@ test("online mouse direction is aim-only and the existing fire edge sends an imm
   control = s.onlineControls()
   assert.equal(control.aimOnly, false)
   assert.equal(control.stickX, -1)
+  assert.equal(control.aimY, undefined, "active touch steering retains priority")
   s.stick.x = 0
   s.stick.mag = 0
   s.keys.add("KeyS")
@@ -548,7 +558,7 @@ test("online mouse direction is aim-only and the existing fire edge sends an imm
     packets.map((packet) => packet.fire),
     [true, false],
   )
-  assert.ok(packets.every((packet) => packet.aimOnly))
+  assert.ok(packets.every((packet) => !packet.aimOnly && packet.aimY === 1))
   canvas.emit("pointerleave")
   assert.equal(s.onlineControls().aimOnly, false)
   canvas.emit("pointermove")
@@ -563,6 +573,78 @@ test("online mouse direction is aim-only and the existing fire edge sends an imm
   s.online.menu = false
   p1.alive = false
   assert.equal(canvas.emit("pointerdown", { buttons: 1 }).prevented, undefined)
+})
+
+test("mouse aim survives simultaneous driving and turning in offline, render, and online inputs", () => {
+  for (const mode of ["room", "online"])
+    for (const mobile of [false, true]) {
+      const { s, p1, p2, canvas, window } = boot(mode, mobile),
+        tank = mobile ? p2 : p1,
+        forward = mobile ? "ArrowUp" : "KeyW",
+        right = mobile ? "ArrowRight" : "KeyD"
+      canvas.emit("pointermove")
+      window.emit("keydown", { code: forward })
+      window.emit("keydown", { code: right })
+      const before = { x: tank.x, y: tank.y },
+        controls = mode === "online" ? s.onlineControls(mobile) : s.localMovementInput(tank)
+      assert.equal(controls.forward, true)
+      assert.equal(controls.right, true)
+      assert.equal(controls.aimOnly, false)
+      close(controls.aimY, 1)
+      close(controls.stickX, 0)
+      close(controls.stickY, 0)
+      if (mode === "online") Net.move(tank, controls, Net.STEP, s.moveTank)
+      else s.humanControl(tank, Net.STEP)
+      assert.ok(tank.x > before.x && tank.y > before.y)
+      close(Net.bodyHeading(tank), 3.65 * Net.STEP)
+      assert.ok(tank.angle > Math.PI / 2 - 0.01)
+      assert.equal(s.mouseAim.active, true)
+      const next = mode === "online" ? s.onlineControls(mobile) : s.localMovementInput(tank)
+      close(Math.atan2(next.aimY, next.aimX), s.mouseAimHeading(tank))
+      assert.ok(next.aimX < 0, "a stationary pointer is recomputed after the tank moves")
+      assert.equal((mobile ? p1 : p2).angle, 0, "the other pilot remains independent")
+    }
+})
+
+test("a new mouse event takes over released touch aim while active Fire and gamepad retain priority", () => {
+  for (const mode of ["room", "online"]) {
+    const { s, p1, canvas, window } = boot(mode)
+    const input = () => (mode === "online" ? s.onlineControls() : s.localMovementInput(p1))
+    s.$("fireBtn").emit("pointerdown", { pointerType: "touch", pointerId: 88, clientX: 250, clientY: 230 })
+    canvas.emit("pointermove")
+    close(input().aimY, -1)
+    window.emit("pointerup", { pointerType: "touch", pointerId: 88 })
+    close(input().aimY, -1)
+    canvas.emit("pointermove")
+    const controls = input()
+    close(controls.aimY, 1)
+    s.gamepadInput = () => ({ stickX: 1, stickY: 0, aimOnly: false })
+    s.window.leqraGamepads = require(assetPath("gamepads.js"))
+    const pad = mode === "online" ? s.onlineControls() : s.localMovementInput(p1)
+    assert.equal(pad.aimY, undefined, "an active gamepad keeps control of aiming")
+    assert.equal(pad.stickX, 1)
+  }
+})
+
+test("gamepad Fire and forward/reverse retain mouse turret aim while gamepad steering takes priority", () => {
+  for (const mode of ["room", "online"])
+    for (const [action, keepAim] of [
+      ["fire", true],
+      ["forward", true],
+      ["reverse", true],
+      ["left", false],
+      ["right", false],
+      ["stickX", false],
+    ]) {
+      const { s, p1, canvas } = boot(mode)
+      canvas.emit("pointermove")
+      const pad = { ...Net.neutral(), [action]: action === "stickX" ? 1 : true }
+      s.gamepadInput = () => pad
+      s.window.leqraGamepads = require(assetPath("gamepads.js"))
+      const controls = mode === "online" ? s.onlineControls() : s.localMovementInput(p1)
+      assert.equal(controls.aimY || 0, keepAim ? 1 : 0, mode + " " + action)
+      if (action === "fire") assert.equal(controls.fire, true)
+    }
 })
 
 test("touching near the fixed arena tank snaps to the exact heading without moving or firing", () => {

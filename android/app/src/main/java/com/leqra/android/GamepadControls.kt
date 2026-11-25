@@ -92,6 +92,12 @@ internal class GamepadInput {
     val firing: Boolean
         get() = trigger || fireKeys.any(held::contains)
 
+    val left: Boolean
+        get() = !hatNeedsNeutral && hatX < -.5 || leftKeys.any(held::contains)
+
+    val right: Boolean
+        get() = !hatNeedsNeutral && hatX > .5 || rightKeys.any(held::contains)
+
     fun key(code: Int, down: Boolean, repeat: Boolean) {
         if (!down) held.remove(code) else if (!repeat) held.add(code)
     }
@@ -145,8 +151,8 @@ internal class GamepadInput {
             input.forward || !hatNeedsNeutral && hatY < -.5 || forwardKeys.any(held::contains)
         input.reverse =
             input.reverse || !hatNeedsNeutral && hatY > .5 || reverseKeys.any(held::contains)
-        input.left = input.left || !hatNeedsNeutral && hatX < -.5 || leftKeys.any(held::contains)
-        input.right = input.right || !hatNeedsNeutral && hatX > .5 || rightKeys.any(held::contains)
+        input.left = input.left || left
+        input.right = input.right || right
         if (!steer) return
         val driving = !driveNeedsNeutral && hypot(driveX, driveY) > DEAD_ZONE
         if (!aimNeedsNeutral && hypot(aimX, aimY) > DEAD_ZONE) {

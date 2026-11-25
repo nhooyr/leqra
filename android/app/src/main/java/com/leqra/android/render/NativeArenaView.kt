@@ -270,7 +270,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         }
 
     var keyboardInputEnabled = true
-    private val mouseControls = GameInput(touchAim = false, aimOnly = true)
+    private val mouseControls = GameInput(touchAim = false)
     val hasMouseInput: Boolean
         get() = mouseAiming || mouseFiring
 
@@ -291,11 +291,11 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         val dy = mouseY - mouseTankY
         val distance = hypot(dx, dy)
         if (mouseAiming && distance.isFinite() && distance >= 2) {
-            mouseControls.stickX = (dx / distance).toDouble()
-            mouseControls.stickY = (dy / distance).toDouble()
+            mouseControls.aimX = (dx / distance).toDouble()
+            mouseControls.aimY = (dy / distance).toDouble()
         } else {
-            mouseControls.stickX = 0.0
-            mouseControls.stickY = 0.0
+            mouseControls.aimX = 0.0
+            mouseControls.aimY = 0.0
         }
         return mouseControls
     }
@@ -1930,6 +1930,11 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             MotionEvent.ACTION_BUTTON_RELEASE -> {
                 mouseX = event.x / density
                 mouseY = event.y / density
+                // In solo play, fresh mouse input takes over released touch aim.
+                if (mouseAimEnabled && localID2 == null && !fireHeld) {
+                    fireAim = null
+                    if (stickPointer < 0 && aimPointer < 0) clearDirectAim()
+                }
                 mouseAiming = mouseAimEnabled
                 mouseFiring =
                     mouseFireEnabled &&

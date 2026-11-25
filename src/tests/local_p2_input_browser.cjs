@@ -34,7 +34,8 @@ const records = [],
 let serial = 0
 const infinityProbe = String.raw`
 window.__p2Input={
- read(){const w=session;return w?{joined:!!w.joined,online:w.online,paired:!!w.local,ids:w.controllers.map(s=>s.id),inputs:w.controllers.map(s=>inputState(s)),tanks:w.controllers.map(s=>{const t=w.tanks.find(t=>t.id===s.id);return t&&{id:t.id,x:t.x,y:t.y,angle:t.angle,alive:t.hp>0};}),bullets:w.bullets.map(b=>({owner:b.owner}))}:null;},
+ read(){const w=session;return w?{joined:!!w.joined,online:w.online,paired:!!w.local,ids:w.controllers.map(s=>s.id),inputs:w.controllers.map(s=>inputState(s)),tanks:w.controllers.map(s=>{const t=w.tanks.find(t=>t.id===s.id);return t&&{id:t.id,x:t.x,y:t.y,angle:t.angle,bodyAngle:net.bodyHeading(t),alive:t.hp>0};}),bullets:w.bullets.map(b=>({owner:b.owner,vx:b.vx,vy:b.vy}))}:null;},
+ send(){sendInput(session,performance.now(),true);},
  step(count=1){for(let i=0;i<count;i++)offlineStep(session,1/60);},
  prepare(){const w=session;w.maze={wallsNear:()=>[],visitWalls:()=>false,blocked:()=>false};w.nextBot=w.nextPickup=1e9;w.pickups=[];w.bullets=[];for(const [i,t]of w.tanks.entries())Object.assign(t,{x:100+i*300,y:100,angle:0,invulnerable:0,spawnProtected:false,power:'',powerTime:0,cooldown:0,charges:0});},
  readyShot(){session.bullets=[];for(const t of session.tanks)t.cooldown=0;},
@@ -47,8 +48,15 @@ async function fixedRead(page) {
     ids: __test.tanks.filter((t) => t.human).map((t) => t.id),
     tanks: __test.tanks
       .filter((t) => t.human)
-      .map((t) => ({ id: t.id, x: t.x, y: t.y, angle: t.angle, alive: t.alive })),
-    bullets: __test.bullets.map((b) => ({ owner: b.owner })),
+      .map((t) => ({
+        id: t.id,
+        x: t.x,
+        y: t.y,
+        angle: t.angle,
+        bodyAngle: window.leqraNet.bodyHeading(t),
+        alive: t.alive,
+      })),
+    bullets: __test.bullets.map((b) => ({ owner: b.owner, vx: b.vx, vy: b.vy })),
   }))
 }
 async function state(page, mode) {
@@ -131,7 +139,7 @@ async function fire(page, mode, source, label, packets) {
     assert.ok(!sent.some((p) => !!p.local === (source === "touch")), label + " fire leaked to other seat")
     if (source === "mouse")
       assert.ok(
-        sent.some((p) => p.aimOnly && Math.hypot(p.stickX, p.stickY) > 0.9),
+        sent.some((p) => !p.aimOnly && Math.hypot(p.aimX, p.aimY) > 0.9),
         label + " pointer aim missing from P2 wire",
       )
   } else {
@@ -177,13 +185,15 @@ async function aim(page, mode, label) {
   await page.mouse.move(mouse.x, mouse.y)
   if (mode === "online") {
     const s = await state(page, mode)
-    assert.ok(s.inputs[1].aimOnly, label + " mouse did not aim P2")
-    assert.ok(!s.inputs[0].aimOnly, label + " mouse aimed P1")
+    assert.ok(Math.hypot(s.inputs[1].aimX, s.inputs[1].aimY) > 0.1, label + " mouse did not aim P2")
+    assert.ok(!s.inputs[1].aimOnly, label + " mouse controlled P2 body")
+    assert.ok(!s.inputs[0].aimX && !s.inputs[0].aimY, label + " mouse aimed P1")
   } else {
     await step(page, mode, 4)
     const after = await state(page, mode)
     assert.ok(turn(before.tanks[0], after.tanks[0]) < 1e-7, label + " mouse turned P1")
     assert.ok(turn(before.tanks[1], after.tanks[1]) > 0.01, label + " mouse did not turn P2")
+    assert.equal(after.tanks[1].bodyAngle, before.tanks[1].bodyAngle, label + " mouse turned P2 body")
   }
   const point = await primaryPoint(page, mode),
     first = await state(page, mode)
@@ -191,13 +201,34 @@ async function aim(page, mode, label) {
   if (mode === "online") {
     const s = await state(page, mode)
     assert.ok(s.inputs[0].aimOnly && s.inputs[0].snapAim, label + " touch did not snap P1")
-    assert.ok(s.inputs[1].aimOnly && !s.inputs[1].snapAim, label + " touch altered P2 mouse aim")
+    assert.ok(Math.hypot(s.inputs[1].aimX, s.inputs[1].aimY) > 0.1, label + " touch altered P2 mouse aim")
   } else {
     await step(page, mode)
     const after = await state(page, mode)
     assert.ok(moved(first.tanks[0], after.tanks[0]) < 1e-7, label + " quick aim moved P1")
     assert.ok(turn(first.tanks[0], after.tanks[0]) > 0.01, label + " touch did not turn P1")
   }
+}
+async function driveWhileAiming(page, mode, label) {
+  const pointer = await mousePoint(page, mode)
+  await page.mouse.move(pointer.x, pointer.y)
+  const before = await state(page, mode)
+  await page.keyboard.down("ArrowUp")
+  await page.keyboard.down("ArrowRight")
+  if (mode === "online") {
+    const s = await state(page, mode),
+      input = s.inputs[1]
+    assert.ok(input.forward && input.right, label + " missing arrow movement")
+    assert.ok(Math.hypot(input.aimX, input.aimY) > 0.1, label + " turning cleared mouse aim")
+    assert.ok(!input.aimOnly, label + " turret aim steered body")
+    await page.waitForTimeout(250)
+  } else await step(page, mode, 12)
+  await page.keyboard.up("ArrowRight")
+  await page.keyboard.up("ArrowUp")
+  const after = await state(page, mode)
+  assert.ok(moved(before.tanks[1], after.tanks[1]) > 1, label + " did not drive P2")
+  assert.ok(Math.abs(after.tanks[1].bodyAngle - before.tanks[1].bodyAngle) > 0.05, label + " did not turn P2")
+  assert.ok(Math.abs(after.tanks[1].bodyAngle - after.tanks[1].angle) > 0.05, label + " turret followed hull")
 }
 async function touchStick(page, mode, label) {
   const selector = mode === "fixed" ? "#stickZone" : "#infiniteStick",
@@ -226,10 +257,198 @@ async function touchStick(page, mode, label) {
   }
   await page.locator(selector).dispatchEvent("pointerup", { ...event, buttons: 0 })
 }
+async function instrumentInfinity(context) {
+  await context.route("**/infinite.js*", async (route) => {
+    const response = await route.fetch(),
+      body = await response.text()
+    assert.ok(body.includes("window.leqraInfinity = Object.freeze"), "Infinity probe insertion point")
+    await route.fulfill({
+      response,
+      body: body.replace(
+        "window.leqraInfinity = Object.freeze",
+        infinityProbe + "\nwindow.leqraInfinity = Object.freeze",
+      ),
+    })
+  })
+}
+async function desktop(browser, engine) {
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 800 },
+    serviceWorkers: "block",
+  })
+  await context.addInitScript(
+    (name) => {
+      for (const [key, value] of Object.entries({
+        "introTour.v1": "1",
+        infinityOnline: "0",
+        infinityOffline: "0",
+        muted: "1",
+        name,
+      }))
+        localStorage.setItem("leqra." + key, value)
+      window.requestAnimationFrame = () => 0
+    },
+    "D" + Date.now().toString(36) + (serial++).toString(36),
+  )
+  await instrumentInfinity(context)
+  const page = await context.newPage(),
+    packets = []
+  page.on("pageerror", (error) => errors.push(engine + " desktop " + error.message))
+  page.on("websocket", (socket) =>
+    socket.on("framesent", (frame) => {
+      try {
+        packets.push(JSON.parse(frame.payload))
+      } catch {}
+    }),
+  )
+  await page.goto(url.href)
+  await page.waitForFunction(() => window.__test && window.__p2Input, {}, { polling: 100 })
+  await page.evaluate(() => {
+    document.querySelector("#startRoomBtn").click()
+    __test.setPhase("playing")
+    __test.setWorld({ width: 840, height: 504, cols: 10, rows: 6, walls: [] })
+    __test.pickups.length = 0
+    __test.clearBullets()
+    for (const [i, t] of __test.tanks.entries())
+      Object.assign(t, {
+        x: 250 + i * 150,
+        y: 200,
+        angle: 0,
+        invulnerable: 0,
+        spawnProtected: false,
+        cooldown: 0,
+        power: null,
+      })
+  })
+  for (const mode of ["fixed", "offline", "online"]) {
+    const label = engine + " desktop " + mode
+    if (mode !== "fixed") {
+      await page.evaluate((mode) => {
+        window.leqraInfinity.close()
+        window.leqraInfinity.start(mode, {
+          name: localStorage.getItem("leqra.name"),
+          public: mode === "online",
+          roomRules: { infinityRandomBots: false },
+        })
+      }, mode)
+      if (mode === "online")
+        await page.waitForFunction(
+          () => {
+            const s = __p2Input.read()
+            return s?.joined && s.ids.length === 1 && s.tanks.every(Boolean)
+          },
+          {},
+          { timeout: 20000, polling: 100 },
+        )
+      else await page.evaluate(() => __p2Input.prepare())
+    }
+    await canvasFocus(page, mode)
+    const point = await primaryPoint(page, mode)
+    await page.mouse.move(point.x + 90, point.y - 65)
+    const before = await state(page, mode)
+    assert.equal(before.ids.length, 1, label + " unexpectedly added P2")
+    await page.keyboard.down("ArrowUp")
+    await page.keyboard.down("ArrowRight")
+    if (mode === "online") {
+      const s = await state(page, mode)
+      assert.ok(s.inputs[0].forward && s.inputs[0].right, label + " arrows did not control P1")
+      assert.ok(Math.hypot(s.inputs[0].aimX, s.inputs[0].aimY) > 0.1, label + " keyboard cleared mouse aim")
+      await page.waitForTimeout(250)
+    } else await step(page, mode, 12)
+    await page.keyboard.up("ArrowRight")
+    await page.keyboard.up("ArrowUp")
+    const after = await state(page, mode)
+    assert.ok(moved(before.tanks[0], after.tanks[0]) > 1, label + " P1 did not move")
+    assert.ok(
+      Math.abs(after.tanks[0].bodyAngle - before.tanks[0].bodyAngle) > 0.05,
+      label + " P1 hull did not turn",
+    )
+    assert.ok(
+      Math.abs(after.tanks[0].bodyAngle - after.tanks[0].angle) > 0.05,
+      label + " turret followed hull",
+    )
+    if (mode !== "online") await readyShot(page, mode)
+    const start = packets.length
+    await page.mouse.down()
+    if (mode === "online") {
+      await page.waitForTimeout(40)
+      assert.ok(
+        packets
+          .slice(start)
+          .some((p) => p.type === "input" && p.fire && !p.local && Math.hypot(p.aimX, p.aimY) > 0.1),
+        label + " mouse fire omitted turret aim",
+      )
+    } else {
+      await step(page, mode)
+      assert.ok(
+        (await state(page, mode)).bullets.some((p) => p.owner === after.ids[0]),
+        label + " mouse did not fire",
+      )
+    }
+    await page.mouse.up()
+    if (mode !== "online") await readyShot(page, mode)
+    const padStart = packets.length
+    await page.evaluate((mode) => {
+      const art = window.leqraInfinityArt,
+        pad = {
+          connected: true,
+          mapping: "standard",
+          index: 9,
+          id: "Mouse aim regression controller",
+          axes: [0, 0, 0, 0],
+          buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })),
+        }
+      art.clearGamepads()
+      art.sampleGamepads([pad], "mouse-fire:" + mode, true, false, false)
+      pad.buttons[0] = { pressed: true, value: 1 }
+      art.sampleGamepads([pad], "mouse-fire:" + mode, true, false, false)
+      if (mode === "online") __p2Input.send()
+    }, mode)
+    if (mode === "online") {
+      await page.waitForTimeout(40)
+      assert.ok(
+        packets.slice(padStart).some((p) => p.type === "input" && p.fire && Math.hypot(p.aimX, p.aimY) > 0.1),
+        label + " gamepad Fire dropped mouse turret aim",
+      )
+    } else {
+      await step(page, mode)
+      const fired = await state(page, mode),
+        shot = fired.bullets.find((b) => b.owner === fired.ids[0])
+      assert.ok(shot, label + " gamepad Fire did not fire")
+      assert.ok(
+        Math.abs(Math.atan2(shot.vy, shot.vx) - fired.tanks[0].angle) < 0.02,
+        label + " gamepad shot missed turret direction",
+      )
+      assert.ok(
+        Math.abs(fired.tanks[0].bodyAngle - fired.tanks[0].angle) > 0.05,
+        label + " gamepad Fire reset mouse turret",
+      )
+    }
+    await page.evaluate((mode) => {
+      window.leqraInfinityArt.clearGamepads()
+      if (mode === "online") __p2Input.send()
+    }, mode)
+    records.push({
+      engine,
+      profile: "desktop",
+      mode,
+      checks: [
+        "P1 arrow movement and turning",
+        "independent mouse turret",
+        "mouse firing",
+        "gamepad Fire preserves mouse turret",
+      ],
+    })
+    await page.screenshot({ path: path.join(output, engine + "-desktop-" + mode + ".png") })
+    console.log("PASS " + label + " independent turret")
+  }
+  await context.close()
+}
 ;(async () => {
   for (const [engine, type] of Object.entries({ chromium, webkit })) {
     if (selected && selected !== engine) continue
     const browser = await type.launch({ headless: true })
+    if (!profileFilter || profileFilter === "desktop") await desktop(browser, engine)
     for (const profile of profiles) {
       const label = engine + " " + profile.name,
         stem = "I" + Date.now().toString(36) + (serial++).toString(36),
@@ -259,18 +478,7 @@ async function touchStick(page, mode, label) {
           localStorage.setItem("leqra." + key, value)
         window.requestAnimationFrame = () => 0
       }, names)
-      await context.route("**/infinite.js*", async (route) => {
-        const response = await route.fetch(),
-          body = await response.text()
-        assert.ok(body.includes("window.leqraInfinity = Object.freeze"), "Infinity probe insertion point")
-        await route.fulfill({
-          response,
-          body: body.replace(
-            "window.leqraInfinity = Object.freeze",
-            infinityProbe + "\nwindow.leqraInfinity = Object.freeze",
-          ),
-        })
-      })
+      await instrumentInfinity(context)
       const page = await context.newPage(),
         packets = []
       page.on("pageerror", (error) => errors.push(label + " " + error.message))
@@ -341,6 +549,7 @@ async function touchStick(page, mode, label) {
         await movement(page, mode, "ArrowUp", label + " " + mode + " arrows", packets)
         await fire(page, mode, "keyboard", label + " " + mode + " keyboard", packets)
         await aim(page, mode, label + " " + mode + " aim")
+        await driveWhileAiming(page, mode, label + " " + mode + " independent turret")
         await fire(page, mode, "mouse", label + " " + mode + " mouse", packets)
         await touchStick(page, mode, label + " " + mode + " joystick")
         await fire(page, mode, "touch", label + " " + mode + " touch", packets)
@@ -353,6 +562,7 @@ async function touchStick(page, mode, label) {
             "arrows→P2",
             "keyboard fire→P2",
             "mouse aim/fire→P2",
+            "arrow movement with independent mouse turret→P2",
             "touch quick aim→P1",
             "touch joystick→P1",
             "touch fire→P1",

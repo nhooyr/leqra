@@ -646,6 +646,24 @@ test("Quick Tour requires the demonstrated action on each page and resets on rep
       keyUp("KeyW")
     }
     assert.equal($("introTourPracticeStatus").textContent, "Tank moved.")
+    if (!touch) {
+      const before = { ...drawn }
+      $("introTourCanvas").emit("pointermove", { pointerType: "mouse", clientX: 80, clientY: 10 })
+      key("KeyW")
+      key("KeyA")
+      h.advance(8)
+      assert.ok(drawn.independentAim, "the tour mouse aims the turret independently")
+      assert.notEqual(h.window.leqraNet.bodyHeading(drawn), h.window.leqraNet.bodyHeading(before))
+      assert.ok(Math.hypot(drawn.x - before.x, drawn.y - before.y) > 1)
+      assert.ok(Math.abs(drawn.angle - h.window.leqraNet.bodyHeading(drawn)) > 0.1)
+      h.context.gamepadInput = () => ({ stickX: 0, stickY: 0, fire: true })
+      h.advance(3)
+      assert.ok(drawn.independentAim, "gamepad Fire preserves the tour's mouse turret aim")
+      h.context.gamepadInput = () => null
+      keyUp("KeyW")
+      keyUp("KeyA")
+      $("introTourCanvas").emit("pointerleave", { pointerType: "mouse" })
+    }
     next.onclick()
     assert.equal($("introTourTitle").textContent, "Fire")
     next.onclick()
@@ -5043,9 +5061,9 @@ test("paired touch Infinity gives keyboard/mouse to P2 and independent touch fir
     canvas.emit("pointerdown", { pointerType: "mouse", button: 0, pointerId: 7, clientX: x, clientY: y })
     assert.equal(socket.sent.at(-1).local, true)
     assert.equal(w.local.lastSent.fire, true)
-    assert.equal(w.local.lastSent.aimOnly, true)
-    assert.ok(Math.abs(w.local.lastSent.stickX - 1) < 1e-9)
-    assert.ok(Math.abs(w.local.lastSent.stickY) < 1e-9)
+    assert.equal(w.local.lastSent.aimOnly, false)
+    assert.ok(Math.abs(w.local.lastSent.aimX - 1) < 1e-9)
+    assert.ok(Math.abs(w.local.lastSent.aimY) < 1e-9)
     h.byID("infiniteFire").emit("pointerdown", { pointerType: "touch", button: 0, pointerId: 8 })
     assert.equal(w.lastSent.fire, true)
     assert.equal(w.lastSent.aimOnly, false)
@@ -5173,7 +5191,7 @@ test("Infinity mouse toggle immediately releases only P1 mouse input online and 
   for (const code of ["KeyW", "ArrowDown", "Space"]) arena.emit("keydown", { code })
   canvas.emit("pointerdown", { pointerType: "mouse", button: 0, pointerId: 1, clientX: 300, clientY: 100 })
   assert.equal(socket.sent.at(-1).fire, true)
-  assert.equal(socket.sent.at(-1).aimOnly, true)
+  assert.ok(Math.hypot(socket.sent.at(-1).aimX, socket.sent.at(-1).aimY) > 0.1)
   const before = socket.sent.length
   enabled = false
   h.infinity.resetMouseControls()
@@ -5274,6 +5292,99 @@ test("Infinity mouse aim and mouse fire operate independently in all four prefer
     }
 })
 
+test("Infinity mouse turret aim stays independent of keyboard driving and turning", () => {
+  const h = harness(undefined, true)
+  h.infinity.start("offline", { roomRules: { infinityRandomBots: false } })
+  const world = h.state(),
+    tank = world.tanks[0],
+    canvas = h.byID("infiniteCanvas"),
+    arena = h.byID("infiniteArena")
+  world.nextPickup = world.nextBot = Infinity
+  world.maze = { wallsNear: () => [], visitWalls: () => false, blocked: () => false }
+  Object.assign(tank, { x: 100, y: 100, angle: 0, invulnerable: 0, spawnProtected: false })
+  canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 390, height: 740 })
+  canvas.emit("pointermove", { pointerType: "mouse", pointerId: 1, clientX: 195, clientY: 470 })
+  for (const code of ["ArrowUp", "ArrowRight"]) arena.emit("keydown", { code })
+  h.advance(8)
+  assert.ok(tank.x > 100 && tank.y > 100, "arrows drive and turn the hull")
+  assert.ok(tank.independentAim)
+  assert.ok(tank.bodyAngle > 0 && tank.bodyAngle < Math.PI / 2)
+  assert.ok(Math.abs(tank.angle - Math.PI / 2) < 1e-9, "stationary mouse keeps its aim while turning")
+  canvas.emit("pointerdown", { pointerType: "mouse", button: 0, pointerId: 1, clientX: 195, clientY: 470 })
+  h.advance()
+  assert.ok(world.bullets.length > 0)
+  assert.ok(world.bullets.every((shot) => Math.abs(shot.vx) < 1e-8 && shot.vy > 0))
+  h.infinity.close()
+})
+
+test("Infinity mouse takes over released Fire aim without interrupting an active Fire touch", () => {
+  const h = harness(undefined, true)
+  h.infinity.start("online", {})
+  const socket = h.sockets[0]
+  socket.receive({ type: "welcome", id: 1, seed: 0 })
+  socket.receive({
+    type: "state",
+    tanks: [{ id: 1, x: 42, y: 42, angle: 0, hp: 1 }],
+    bullets: [],
+    leaderboard: [],
+    players: 1,
+  })
+  const canvas = h.byID("infiniteCanvas")
+  canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 390, height: 740 })
+  h.byID("infiniteFire").emit("pointerdown", {
+    pointerType: "touch",
+    button: 0,
+    pointerId: 1,
+    clientX: 48,
+    clientY: 16,
+  })
+  canvas.emit("pointermove", { pointerType: "mouse", pointerId: 2, clientX: 300, clientY: 370 })
+  h.advance(3)
+  assert.equal(h.state().lastSent.aimY, -1, "active Fire touch retains aiming priority")
+  h.window.emit("pointerup", { pointerType: "touch", pointerId: 1 })
+  canvas.emit("pointermove", { pointerType: "mouse", pointerId: 2, clientX: 300, clientY: 370 })
+  h.advance(3)
+  assert.equal(h.state().lastSent.aimX, 1, "new pointer movement takes over the released Fire aim")
+  assert.equal(h.state().lastSent.aimY, 0)
+  h.infinity.close()
+})
+
+test("Infinity gamepad Fire and throttle preserve mouse aim but gamepad steering takes priority", () => {
+  const h = harness(undefined, true)
+  let pad
+  Object.assign(h.window.leqraInfinityArt, {
+    gamepadInput: () => pad,
+    mergeGamepad: require(assetPath("gamepads.js")).merge,
+  })
+  h.infinity.start("online", {})
+  const socket = h.sockets[0]
+  socket.receive({ type: "welcome", id: 1, seed: 0 })
+  socket.receive({
+    type: "state",
+    tanks: [{ id: 1, x: 42, y: 42, angle: 0, hp: 1 }],
+    bullets: [],
+    leaderboard: [],
+    players: 1,
+  })
+  const canvas = h.byID("infiniteCanvas")
+  canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 390, height: 740 })
+  canvas.emit("pointermove", { pointerType: "mouse", pointerId: 2, clientX: 300, clientY: 370 })
+  for (const [action, keepAim] of [
+    ["fire", true],
+    ["forward", true],
+    ["reverse", true],
+    ["left", false],
+    ["right", false],
+    ["stickY", false],
+  ]) {
+    pad = { ...h.window.leqraNet.neutral(), [action]: action === "stickY" ? 1 : true }
+    h.advance(3)
+    assert.equal(h.state().lastSent.aimX || 0, keepAim ? 1 : 0, action)
+    if (action === "fire") assert.equal(h.state().lastSent.fire, true)
+  }
+  h.infinity.close()
+})
+
 test("changing Infinity aim does not release mouse fire and changing fire does not erase mouse aim", () => {
   const h = harness(undefined, true)
   let aim = true,
@@ -5296,7 +5407,7 @@ test("changing Infinity aim does not release mouse fire and changing fire does n
   canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 390, height: 740 })
   canvas.emit("pointerdown", { pointerType: "mouse", button: 0, pointerId: 1, clientX: 300, clientY: 70 })
   assert.equal(socket.sent.at(-1).fire, true)
-  assert.equal(socket.sent.at(-1).aimOnly, true)
+  assert.ok(Math.hypot(socket.sent.at(-1).aimX, socket.sent.at(-1).aimY) > 0.1)
   aim = false
   h.infinity.resetMouseControls("aim")
   assert.equal(socket.sent.at(-1).fire, true)
@@ -5307,15 +5418,15 @@ test("changing Infinity aim does not release mouse fire and changing fire does n
   assert.equal(socket.sent.at(-1).aimOnly, false)
   canvas.emit("pointermove", { pointerType: "mouse", pointerId: 1, clientX: 300, clientY: 70, buttons: 1 })
   h.advance(3)
-  assert.equal(h.state().lastSent.aimOnly, true)
+  assert.ok(Math.hypot(h.state().lastSent.aimX, h.state().lastSent.aimY) > 0.1)
   fire = false
   h.infinity.resetMouseControls("fire")
   assert.equal(socket.sent.at(-1).fire, false)
-  assert.equal(socket.sent.at(-1).aimOnly, true)
+  assert.ok(Math.hypot(socket.sent.at(-1).aimX, socket.sent.at(-1).aimY) > 0.1)
   fire = true
   h.infinity.resetMouseControls("fire")
   assert.equal(socket.sent.at(-1).fire, false)
-  assert.equal(socket.sent.at(-1).aimOnly, true)
+  assert.ok(Math.hypot(socket.sent.at(-1).aimX, socket.sent.at(-1).aimY) > 0.1)
   canvas.emit("pointermove", { pointerType: "mouse", pointerId: 1, clientX: 300, clientY: 70, buttons: 1 })
   h.advance(3)
   assert.equal(h.state().lastSent.fire, false)

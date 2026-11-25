@@ -6,6 +6,7 @@
 - Let Escape close the ready-room leaderboard on macOS and clarify the separate P1/P2 keyboard layouts.
 - Fix Keychain access in local macOS builds so saving an account key no longer blocks play.
 - Keep native pause-menu borders and actions visible in short windows. Add round-result borders and remove extra macOS styling around the header buttons and version badge.
+- Aim the turret independently with the mouse while driving and turning with the keyboard on web, iOS, Android, and macOS.
 
 ## v0.9.4
 

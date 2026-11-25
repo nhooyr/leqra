@@ -552,9 +552,11 @@ final class GameScene: SKScene {
             clearMouseAim()
         } else {
             if mouseTarget !== target { clearMouseAim() }
+            let resumed = target.inputSources.resumeMouseAim(directTouchActive: target.aimTouch != nil)
             mousePointer = convertPoint(toView: point)
             mouseTarget = target
             refreshMouseAim()
+            if resumed { target.publishInput() }
         }
         return true
     }

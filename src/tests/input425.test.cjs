@@ -270,7 +270,10 @@ test("tour mouse hints share distinct aim and fire SVG keycaps and honor indepen
   assert.equal(aim.includes("mouse-button-fill"), false)
   assert.ok(fire.includes("mouse-button-fill"))
   const html = readFileSync(require("node:path").join(__dirname, "../web/index.html"), "utf8")
-  assert.match(html, /<dd id="introTourMouseAim">[\s\S]*?Point over the maze\.[\s\S]*?<\/dd>/)
+  assert.match(
+    html,
+    /<dd id="introTourMouseAim">[\s\S]*?aim\s+the turret independently while driving and turning with the keyboard\.[\s\S]*?<\/dd>/,
+  )
   assert.match(html, /<dd id="introTourMouseFire">[\s\S]*?Left-click to fire[\s\S]*?<\/dd>/)
   for (const [mouseAim, mouseFire] of [
     [true, false],

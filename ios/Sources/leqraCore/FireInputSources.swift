@@ -53,8 +53,6 @@ public struct LocalInputSources: Sendable {
             aim = touch
         } else if gamepadActive {
             aim = gamepad
-        } else if let mouseAim, !result.left, !result.right {
-            aim = GameInput(stickX: mouseAim.x, stickY: mouseAim.y, touchAim: false, aimOnly: true)
         } else {
             aim = nil
         }
@@ -68,9 +66,30 @@ public struct LocalInputSources: Sendable {
         if let fireAim {
             result.aimX = fireAim.x
             result.aimY = fireAim.y
+        } else if !touchActive, !gamepadActive, !gamepad.left, !gamepad.right, let mouseAim {
+            result.aimX = mouseAim.x
+            result.aimY = mouseAim.y
         }
         return result
     }
 
     public mutating func reset() { self = LocalInputSources() }
+
+    /// A new pointer event can take over from a completed touch-aiming gesture.
+    /// Refreshing a stationary pointer must not cancel active touch aiming.
+    @discardableResult public mutating func resumeMouseAim(directTouchActive: Bool = false) -> Bool {
+        var changed = false
+        if !touch.fire, fireAim != nil {
+            fireAim = nil
+            changed = true
+        }
+        if !touch.fire, !directTouchActive, touch.snapAim {
+            touch.stickX = 0
+            touch.stickY = 0
+            touch.aimOnly = false
+            touch.snapAim = false
+            changed = true
+        }
+        return changed
+    }
 }

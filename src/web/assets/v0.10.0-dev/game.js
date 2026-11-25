@@ -3458,9 +3458,7 @@
         ? directAim.angle
         : joystick
           ? Math.atan2(stick.y, stick.x)
-          : mouse && !left && !right
-            ? mouseAimHeading(t)
-            : null
+          : null
     if (desired !== null) {
       const diff = angleDelta(t.angle, desired)
       t.angle += snap
@@ -3476,6 +3474,10 @@
     } else t.angle += ((right ? 1 : 0) - (left ? 1 : 0)) * 3.65 * turnScale * dt
     const speed = 128 * speedScale
     moveTank(t, Math.cos(t.angle) * speed * throttle * dt, Math.sin(t.angle) * speed * throttle * dt)
+    if (!controls && mouse && (!p1 || stick.mag <= 0.1)) {
+      const aim = mouseAimHeading(t)
+      if (aim !== null) controls = Net.fireAimInput(Math.cos(aim), Math.sin(aim))
+    }
     Net.applyTurretAim(t, controls || {})
     if (moveOnly) return
     const held = p1 ? primaryFireHeld() : secondaryFireHeld()
@@ -6478,12 +6480,7 @@
       right = heldAction(index, "right")
     const snap = primary && directAim.active,
       independent = snap && directAim.independent,
-      aim =
-        snap && !independent
-          ? directAim.angle
-          : !independent && mouse && (!primary || stick.mag <= 0.1) && !left && !right
-            ? mouseAimHeading(t)
-            : null
+      aim = snap && !independent ? directAim.angle : null
     const input = {
       forward: heldAction(index, "forward"),
       reverse: heldAction(index, "reverse"),
@@ -6496,9 +6493,14 @@
       snapAim: snap && !independent,
       touchAim: primary && stick.mag > 0.1 && stick.assisted,
     }
+    const pad = gamepadInput(index),
+      padSteering = pad && (Math.hypot(pad.stickX, pad.stickY) > 0.1 || pad.left || pad.right)
     if (independent)
       Object.assign(input, Net.fireAimInput(Math.cos(directAim.angle), Math.sin(directAim.angle)))
-    const pad = gamepadInput(index)
+    else if (!snap && mouse && (!primary || stick.mag <= 0.1) && !padSteering) {
+      const heading = mouseAimHeading(t)
+      if (heading !== null) Object.assign(input, Net.fireAimInput(Math.cos(heading), Math.sin(heading)))
+    }
     return pad ? window.leqraGamepads.merge(input, pad, primary && (snap || stick.mag > 0.1)) : input
   }
   function advanceLocalRenderTank(pose, span, input) {
@@ -9210,12 +9212,7 @@
       right = heldAction(index, "right")
     const snap = !second && directAim.active,
       independent = snap && directAim.independent,
-      aim =
-        snap && !independent
-          ? directAim.angle
-          : !snap && mouse && !left && !right && (second || stick.mag <= 0.1)
-            ? mouseAimHeading((second ? online.secondary : online)?.predictor?.state || tank)
-            : null
+      aim = snap && !independent ? directAim.angle : null
     const input = {
       forward: heldAction(index, "forward"),
       reverse: heldAction(index, "reverse"),
@@ -9227,10 +9224,15 @@
       aimOnly: aim !== null,
     }
     if (snap && !independent) input.snapAim = true
+    const pad = gamepadInput(index),
+      padSteering = pad && (Math.hypot(pad.stickX, pad.stickY) > 0.1 || pad.left || pad.right)
     if (independent)
       Object.assign(input, Net.fireAimInput(Math.cos(directAim.angle), Math.sin(directAim.angle)))
+    else if (!snap && mouse && (second || stick.mag <= 0.1) && !padSteering) {
+      const heading = mouseAimHeading((second ? online.secondary : online)?.predictor?.state || tank)
+      if (heading !== null) Object.assign(input, Net.fireAimInput(Math.cos(heading), Math.sin(heading)))
+    }
     if (!second && stick.assisted && stick.mag > 0.1) input.touchAim = true
-    const pad = gamepadInput(index)
     return pad ? window.leqraGamepads.merge(input, pad, !second && (snap || stick.mag > 0.1)) : input
   }
   function resetOnlineMotion() {
@@ -16712,11 +16714,9 @@
         left = held("left"),
         right = held("right")
       const mouse = !!mousePoint && combatPrefs.mouseAim !== false
-      const angle =
-        touchAim ??
-        (fireAim === null && mouse && !left && !right
-          ? demo.aimAt(mousePoint.clientX, mousePoint.clientY, false)
-          : null)
+      const angle = touchAim
+      const pad = gamepadInput(0),
+        padSteering = pad && (Math.hypot(pad.stickX, pad.stickY) > 0.1 || pad.left || pad.right)
       const controls = window.leqraGamepads.merge(
         {
           forward,
@@ -16729,10 +16729,14 @@
           snapAim: touchAim !== null,
           touchAim: stickID !== null,
         },
-        gamepadInput(0),
+        pad,
         stickID !== null || touchAim !== null,
       )
       if (fireAim !== null) Object.assign(controls, Net.fireAimInput(Math.cos(fireAim), Math.sin(fireAim)))
+      else if (touchAim === null && stickID === null && mouse && !padSteering) {
+        const heading = demo.aimAt(mousePoint.clientX, mousePoint.clientY, false)
+        if (heading !== null) Object.assign(controls, Net.fireAimInput(Math.cos(heading), Math.sin(heading)))
+      }
       while (accumulator + 1e-9 >= physicsStep) {
         const result = demo.step(physicsStep, controls, firing, canFire() && firePressed)
         firePressed = false
@@ -16769,7 +16773,6 @@
         firePressed = true
         initAudio()
       }
-      if (action === "left" || action === "right") mousePoint = null
       keys.add(e.code)
     })
     window.addEventListener("keyup", (e) => keys.delete(e.code))
@@ -17543,12 +17546,6 @@
         ["forward", "reverse", "left", "right"].some((action) => keyForAction(0, action, e.code))
       )
         clearDirectAim()
-      if (
-        fresh &&
-        (keyForAction(hardwareUsesP2() ? 1 : 0, "left", e.code) ||
-          keyForAction(hardwareUsesP2() ? 1 : 0, "right", e.code))
-      )
-        clearMouseAim()
       if (fresh && isWeaponKey(e.code)) {
         if (primaryFireKey(e.code) && !wasFire) firePresses.add(localPlayerID())
         const second = secondaryID()
@@ -17843,7 +17840,7 @@
       clearMouseAim()
       return false
     }
-    if (!hardwareUsesP2()) clearDirectAim()
+    if (!hardwareUsesP2() && fireDrag.id === null && directAim.id === null) clearDirectAim()
     // The offsets are CSS pixels on the canvas, before its world transform.
     mouseAim.x = e.offsetX
     mouseAim.y = e.offsetY
