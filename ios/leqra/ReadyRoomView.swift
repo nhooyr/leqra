@@ -337,9 +337,13 @@ struct ReadyRoomView: View {
                     ) { Text("Team \($0)").tag($0) }
                 }.font(.system(size: 12))
             }
-            Text("Touch controls P1. Keyboard/mouse controls P2.")
-                .font(.system(size: 11)).foregroundStyle(WebStyle.soft).fixedSize(
-                    horizontal: false, vertical: true)
+            Text(
+                NativePlatform.isDesktop
+                    ? "Keyboard layout 1 controls P1. Keyboard layout 2 controls P2."
+                    : "Touch controls P1. Keyboard/mouse controls P2."
+            )
+            .font(.system(size: 11)).foregroundStyle(WebStyle.soft).fixedSize(
+                horizontal: false, vertical: true)
         }.frame(maxWidth: .infinity, alignment: .leading).padding(10).background(
             WebStyle.sunken, in: RoundedRectangle(cornerRadius: 7))
     }

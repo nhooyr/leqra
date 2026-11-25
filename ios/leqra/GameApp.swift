@@ -39,7 +39,8 @@ struct GameApp: App {
                     Button("Controls…") { session.openDesktopControls() }
                     Button("Close Panel / Resume") { session.handleDesktopEscape() }
                     .keyboardShortcut(.escape, modifiers: [])
-                    .disabled(!session.hasModal && !session.paused && !session.showShowcase)
+                    .disabled(
+                        !session.hasModal && !session.paused && !session.showShowcase && !session.showScores)
                 }
             }
         #endif

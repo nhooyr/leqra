@@ -3,6 +3,7 @@
 ## v0.10.0 (Unreleased)
 
 - Add a macOS app built from the shared iOS codebase, with resizable windows, desktop keyboard and mouse controls, and Mac App Store archive support.
+- Let Escape close the ready-room leaderboard on macOS and clarify the separate P1/P2 keyboard layouts.
 
 ## v0.9.4
 

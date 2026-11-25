@@ -44,6 +44,19 @@ final class MacCatalystUITests: XCTestCase {
     }
 
     @MainActor
+    func testEscapeDismissesReadyRoomLeaderboard() {
+        let app = launch()
+        defer { app.terminate() }
+        app.buttons["toggleStandings"].click()
+        let close = app.buttons["closeStandings"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        app.windows.firstMatch.typeKey(XCUIKeyboardKey.escape, modifierFlags: [])
+        waitUntil("Escape closes the ready-room leaderboard") { !close.exists }
+        XCTAssertTrue(app.buttons["playRoom"].exists)
+        XCTAssertFalse(app.buttons["pauseGame"].exists)
+    }
+
+    @MainActor
     func testKeyboardMovementMouseAimAndFire() throws {
         for fixed in [true, false] {
             let app = launch(probe: true, fixed: fixed)
@@ -134,6 +147,10 @@ final class MacCatalystUITests: XCTestCase {
         let addP2 = app.buttons["addLocalP2"]
         reveal(addP2, in: app)
         addP2.click()
+        XCTAssertTrue(
+            app.staticTexts["Keyboard layout 1 controls P1. Keyboard layout 2 controls P2."]
+                .waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Touch controls P1. Keyboard/mouse controls P2."].exists)
         let removeBots = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Remove '"))
         while removeBots.count > 0 {
             let remove = removeBots.firstMatch
