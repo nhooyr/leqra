@@ -33,7 +33,7 @@ trap 'exit 143' TERM
 
 swift -module-cache-path .build/swift-module-cache ci/ios-cache.swift restore "$ci_tmpdir/leqra-ios-inputs.json"
 
-swift test --package-path ios --configuration debug --disable-index-store \
+swift test --package-path ios --configuration release --disable-index-store \
 	--build-system native --scratch-path "$ci_tmpdir/leqra-swift"
 
 set -- -project ios/leqra.xcodeproj -scheme leqra -configuration Debug \

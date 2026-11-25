@@ -124,10 +124,9 @@ subtest 'shared regression tests and app compilation overlap simulator startup' 
     );
     is( $_->{cwd}, $project, 'commands run from repository root' ) for @$events;
     my $core = stage( $events, 'core' );
-    is( flag( $core, '--configuration' ),
-        'debug', 'shared regression tests avoid whole-module release compilation' );
-    is( flag( $core, '--build-system' ), 'native', 'native incremental build system' );
-    is( flag( $core, '--scratch-path' ), "$tmp/build temporary/leqra-swift", 'shared cache path' );
+    is( flag( $core, '--configuration' ), 'release', 'shared regression tests use optimized execution' );
+    is( flag( $core, '--build-system' ),  'native',  'native incremental build system' );
+    is( flag( $core, '--scratch-path' ),  "$tmp/build temporary/leqra-swift", 'shared cache path' );
     my $build = stage( $events, 'build-for-testing' );
     is(
         flag( $build, '-destination' ),
