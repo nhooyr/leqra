@@ -1982,7 +1982,8 @@
             rank = world.online ? tank?.rank : standings.findIndex((entry) => entry.id === tank?.id) + 1
           return [identity.label, score(tank), rank, identity.color]
         })
-        const signature = JSON.stringify(rows)
+        const compact = document.body.classList.contains("tablet-header"),
+          signature = JSON.stringify([rows, compact])
         if (signature !== world.personalScoreRows) {
           world.personalScoreRows = signature
           const children = []
@@ -2000,7 +2001,7 @@
             separator.textContent = ": "
             const value = document.createElement("span")
             value.className = "infinite-score-value"
-            value.textContent = total
+            value.textContent = compact ? "score: " + score + ", #" + (rank > 0 ? rank : 0) : total
             counter.append(name, separator, value)
             children.push(counter)
           }

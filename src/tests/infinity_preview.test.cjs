@@ -231,6 +231,13 @@ test("Infinity preview uses real public counts, a measured FPS node and the shar
   assert.equal(pilots[1].children[1].textContent, ": ")
   assert.equal(pilots[1].children[2].textContent, "score: 0, rank: #0")
   assert.equal(pilots[0].attributes["aria-label"], "SNOW <FOX> (P1): score: 0, rank: #0")
+  s.document.body.classList.toggle("tablet-header", true)
+  s.document.emit("change")
+  assert.equal($("infinityPreviewScores").children[0].children[2].textContent, "score: 0, #0")
+  assert.equal(
+    $("infinityPreviewScores").children[0].attributes["aria-label"],
+    "SNOW <FOX> (P1): score: 0, rank: #0",
+  )
   requests[0].resolve({
     players: 7,
     tankCount: 18,

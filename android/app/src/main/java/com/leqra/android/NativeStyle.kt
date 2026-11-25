@@ -404,6 +404,11 @@ internal object NativeStyle {
                 ink.style = android.graphics.Paint.Style.STROKE
                 ink.strokeCap = Paint.Cap.ROUND
                 when (kind) {
+                    "leaderboard" -> {
+                        for ((x, top) in listOf(5f to 12f, 10f to 5f, 15f to 9f)) {
+                            canvas.drawRect(x, top, x + 4f, 20f, ink)
+                        }
+                    }
                     "pause" -> {
                         canvas.drawLine(9f, 5f, 9f, 19f, ink)
                         canvas.drawLine(15f, 5f, 15f, 19f, ink)

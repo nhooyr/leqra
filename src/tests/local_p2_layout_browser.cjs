@@ -1,5 +1,5 @@
 "use strict"
-// Optional phone/tablet HUD regression against a disposable loopback server.
+// Optional phone/tablet HUD regression test against a disposable loopback server.
 // node src/tests/local_p2_layout_browser.cjs http://127.0.0.1:8080 --browser=chromium
 const assert = require("node:assert/strict"),
   fs = require("node:fs"),
@@ -40,8 +40,8 @@ async function checkStatusPlacement(page, arena, label) {
             )
           : root.querySelector(arena === "showcase" ? ".arena-bar" : "#infiniteStatusbar"),
       rect = (node) => {
-        const { top, bottom, height } = node.getBoundingClientRect()
-        return { top, bottom, height }
+        const { top, bottom, height, left, right, width } = node.getBoundingClientRect()
+        return { top, bottom, height, left, right, width }
       }
     return {
       footer: document.body.classList.contains("status-footer"),
@@ -53,12 +53,19 @@ async function checkStatusPlacement(page, arena, label) {
       statusInHeader: header.contains(status),
       headerStatusCount: header.querySelectorAll(".arena-bar").length,
       headerOverflows: header.scrollWidth > header.clientWidth + 1,
+      statusOverflows: status.scrollWidth > status.clientWidth + 1,
+      statusChildren: [...status.children]
+        .filter((node) => node.getClientRects().length && !node.hidden)
+        .map(rect),
+      brand: rect(header.querySelector(".brand")),
+      actions: rect(header.querySelector(".header-right")),
       statusText: [...status.querySelectorAll("span,strong,h2,button")]
         .filter((node) => node.getClientRects().length && !node.hidden && node.textContent.trim())
         .map((node) => ({
           text: node.textContent,
           font: parseFloat(getComputedStyle(node).fontSize),
           overflow: node.scrollWidth > node.clientWidth + 1,
+          icon: getComputedStyle(node, "::after").maskImage !== "none",
         })),
     }
   }, arena)
@@ -72,6 +79,23 @@ async function checkStatusPlacement(page, arena, label) {
       label + " combined status leaves header",
     )
     assert.equal(data.headerOverflows, false, label + " combined header overflows")
+    assert.ok(data.brand.right <= data.status.left + 1, label + " brand overlaps status")
+    assert.ok(data.status.right <= data.actions.left + 1, label + " status overlaps actions")
+    for (const child of data.statusChildren)
+      assert.ok(
+        Math.abs(child.top + child.height / 2 - (data.status.top + data.status.height / 2)) <= 1,
+        label + " tablet status wraps or is not vertically centered",
+      )
+    if (!data.statusOverflows && data.statusChildren.length) {
+      const left = Math.min(...data.statusChildren.map((child) => child.left)),
+        right = Math.max(...data.statusChildren.map((child) => child.right))
+      assert.ok(
+        Math.abs((left + right) / 2 - (data.status.left + data.status.right) / 2) <= 1,
+        label + " tablet status is not horizontally centered",
+      )
+    }
+    if (data.header.width >= 750)
+      assert.equal(data.statusOverflows, false, label + " ordinary tablet status needs horizontal scrolling")
   } else {
     assert.equal(data.statusInHeader, false, label + " separate arena status moved into main header")
     if (data.footer)
@@ -80,7 +104,7 @@ async function checkStatusPlacement(page, arena, label) {
   }
   for (const text of data.statusText) {
     assert.ok(text.font >= 10, label + " status text too small: " + text.text)
-    assert.equal(text.overflow, false, label + " status text clipped: " + text.text)
+    if (!text.icon) assert.equal(text.overflow, false, label + " status text clipped: " + text.text)
   }
   assert.ok(data.status.bottom <= data.height + 1, label + " status outside viewport")
 }
@@ -113,6 +137,21 @@ async function checkPreviewCoverage(page, label) {
   assert.ok(Math.abs(data.canvas - data.wrap) < 1, label + " preview canvas leaves a bottom gap")
   await checkStatusPlacement(page, "fixed", label + " preview")
   await page.screenshot({ path: path.join(output, label.replace(/[^a-z0-9]+/gi, "-") + "-preview.png") })
+  if (await page.evaluate(() => document.body.classList.contains("tablet-header"))) {
+    await page.locator("#infinityPreviewScoreboardBtn").click()
+    assert.equal(
+      await page.locator("#infinityPreviewScoreboard").evaluate((panel) => panel.open && !panel.hidden),
+      true,
+      label + " tablet leaderboard does not open",
+    )
+    await page.locator("#infinityPreviewScoreboardNote").click()
+    assert.equal(
+      await page.locator("#infinityPreviewScoreboard").evaluate((panel) => panel.open && !panel.hidden),
+      true,
+      label + " interacting with tablet leaderboard closes it",
+    )
+    await page.locator("#infinityPreviewScoreboardBtn").click()
+  }
   await page.evaluate(() => {
     const toggle = document.querySelector("#infinityToggle")
     toggle.checked = false
@@ -170,9 +209,11 @@ async function checkHUD(page, arena, variant, label) {
         width: innerWidth,
         height: innerHeight,
         touch: document.body.classList.contains("touch-ui"),
+        tablet: document.body.classList.contains("tablet-header"),
         bodyWidth: document.body.scrollWidth,
         version: rect(document.querySelector("#headerVersion")),
         versionText: document.querySelector("#headerVersion").textContent,
+        github: rect(document.querySelector(".github-link")),
         captions: document.querySelector(arena === "fixed" ? "#touchControls" : ".infinite-touch-controls")
           .innerText,
         header: rect(document.querySelector("#gameHeader")),
@@ -208,13 +249,18 @@ async function checkHUD(page, arena, variant, label) {
   )
   assert.ok(data.bodyWidth <= data.width + 1, label + " page overflows")
   assert.ok(data.stage.height > 30, label + " arena collapsed")
-  assert.ok(data.versionText && data.version.width > 0 && data.version.height > 0, label + " version hidden")
+  assert.ok(data.versionText, label + " version text removed")
+  if (data.tablet && data.width <= 960)
+    assert.ok(data.github.width > 0 && data.github.height > 0, label + " GitHub icon hidden")
+  else assert.ok(data.version.width > 0 && data.version.height > 0, label + " version hidden")
   assert.doesNotMatch(data.captions, /\b(STEER|FIRE|LET IT RIP)\b/, label + " touch captions returned")
   const [first, second] = data.panels
   assert.ok(
     first.rect.right <= second.rect.left + 1 || first.rect.bottom <= second.rect.top + 1,
     label + " local HUD panels overlap",
   )
+  if (data.tablet && data.width >= 768)
+    assert.ok(Math.abs(first.rect.top - second.rect.top) < 1, label + " tablet pilots are stacked")
   assert.notEqual(first.color, second.color, label + " pilot colors lost")
   for (const [index, panel] of data.panels.entries()) {
     assert.equal(panel.name, names[index] + " (P" + (index + 1) + ")", label + " identity")
@@ -280,6 +326,8 @@ async function checkHUD(page, arena, variant, label) {
       page.on("pageerror", (error) => errors.push(name + " " + error.message))
       await page.goto(url.href)
       await page.waitForFunction(() => window.__test)
+      const dismiss = page.getByRole("button", { name: "Dismiss browser recommendation" })
+      if (await dismiss.count()) await dismiss.click()
       await checkStatusPlacement(page, "fixed", name + " " + width + "x" + height + " ready room")
       await checkPreviewCoverage(page, name + " " + width + "x" + height)
       await page.evaluate((names) => {

@@ -1,5 +1,5 @@
 "use strict"
-// Optional real browser input regression against a disposable loopback server.
+// Optional real browser input regression test against a disposable loopback server.
 // node src/tests/local_p2_input_browser.cjs http://127.0.0.1:8080 --disposable
 // Physics is stepped explicitly so short, real DOM presses are deterministic.
 const assert = require("node:assert/strict"),
@@ -179,6 +179,16 @@ async function primaryPoint(page, mode) {
       })
     : page.evaluate(() => __p2Input.primaryPoint())
 }
+async function drivingAim(page, mode, index) {
+  const center = await (index ? mousePoint(page, mode) : primaryPoint(page, mode)),
+    initial = await state(page, mode),
+    angle = initial.tanks[index].bodyAngle + Math.PI
+  // Aim behind the observed hull so a random online spawn cannot line up with the test's turn.
+  return {
+    x: center.x - (index ? (mode === "fixed" ? 30 : 35) : 0) + 90 * Math.cos(angle),
+    y: center.y + (index ? 25 : 0) + 90 * Math.sin(angle),
+  }
+}
 async function aim(page, mode, label) {
   const before = await state(page, mode),
     mouse = await mousePoint(page, mode)
@@ -210,7 +220,7 @@ async function aim(page, mode, label) {
   }
 }
 async function driveWhileAiming(page, mode, label) {
-  const pointer = await mousePoint(page, mode)
+  const pointer = await drivingAim(page, mode, 1)
   await page.mouse.move(pointer.x, pointer.y)
   const before = await state(page, mode)
   await page.keyboard.down("ArrowUp")
@@ -343,8 +353,8 @@ async function desktop(browser, engine) {
       else await page.evaluate(() => __p2Input.prepare())
     }
     await canvasFocus(page, mode)
-    const point = await primaryPoint(page, mode)
-    await page.mouse.move(point.x + 90, point.y - 65)
+    const point = await drivingAim(page, mode, 0)
+    await page.mouse.move(point.x, point.y)
     const before = await state(page, mode)
     assert.equal(before.ids.length, 1, label + " unexpectedly added P2")
     await page.keyboard.down("ArrowUp")

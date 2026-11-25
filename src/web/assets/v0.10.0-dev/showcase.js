@@ -81,7 +81,7 @@
     const header = document.createElement("div")
     header.className = "infinite-header showcase-header"
     header.append(visualClone(document.getElementById("gameHeader")))
-    for (const bar of header.querySelectorAll(".arena-bar")) bar.remove()
+    for (const bar of header.querySelectorAll(".arena-bar,.infinity-preview-scoreboard")) bar.remove()
     header.querySelector('[data-showcase-source="roomControlsBtn"]')?.remove()
     for (const id of ["roomBtn", "chatBtn"]) {
       const node = header.querySelector('[data-showcase-source="' + id + '"]')
@@ -103,7 +103,12 @@
       .setAttribute("aria-expanded", String(!mobile))
     const fps = document.createElement("span")
     fps.className = "fps-indicator"
-    fps.textContent = "fps: " + scene.fps + ", ping: " + scene.ping + " ms"
+    fps.textContent =
+      "fps: " +
+      scene.fps +
+      (document.body.classList.contains("tablet-header") ? ", " : ", ping: ") +
+      scene.ping +
+      " ms"
     bar.querySelector(".fps-indicator")?.remove()
     bar.insertBefore(fps, bar.querySelector(".bar-right"))
     const hero = scene.tanks.find((tank) => tank.id === scene.localID),
@@ -119,7 +124,8 @@
     separator.textContent = ": "
     const value = document.createElement("span")
     value.className = "infinite-score-value"
-    value.textContent = "score: " + hero.score + ", rank: #1"
+    value.textContent =
+      "score: " + hero.score + (document.body.classList.contains("tablet-header") ? ", #1" : ", rank: #1")
     score.append(name, separator, value)
     scores.replaceChildren(score)
     if (mobile) {

@@ -101,6 +101,7 @@ test("frame readouts label real ping during online play and omit it for offline 
     latency = 47,
     surface = "fpsIndicator",
     override,
+    tablet = false,
   ) {
     const nodes = new Map(),
       $ = (id) => {
@@ -113,6 +114,7 @@ test("frame readouts label real ping during online play and omit it for offline 
       phase,
       online: { connected: true, pingMeasured: measured, latency },
       combatPrefs: { fps: true },
+      document: { body: { classList: { contains: () => tablet } } },
     }
     vm.createContext(s)
     vm.runInContext(
@@ -145,6 +147,10 @@ test("frame readouts label real ping during online play and omit it for offline 
     reading("online", "playing", true, 47, "infiniteFPSIndicator", { latency: null }).textContent,
     "fps: 60",
   )
+  assert.equal(
+    reading("online", "playing", true, 47, "infiniteFPSIndicator", undefined, true).textContent,
+    "fps: 60, 47 ms",
+  )
 })
 
 test("menu responses and new game ping samples update the HUD without waiting for the FPS interval", () => {
@@ -153,7 +159,14 @@ test("menu responses and new game ping samples update the HUD without waiting fo
       if (!nodes.has(id)) nodes.set(id, { classList: { toggle() {} } })
       return nodes.get(id)
     }
-  const s = { $, mode: "room", phase: "menu", online: {}, combatPrefs: { fps: true } }
+  const s = {
+    $,
+    mode: "room",
+    phase: "menu",
+    online: {},
+    combatPrefs: { fps: true },
+    document: { body: { classList: { contains: () => false } } },
+  }
   vm.createContext(s)
   vm.runInContext(
     source.slice(

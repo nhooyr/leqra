@@ -107,6 +107,7 @@ internal class ShowcaseView(
             context.dp(6),
         )
         loadout.compact = !portrait
+        loadout.inline = combined
         loadout.safeLeft = safeLeft
         loadout.safeRight = safeRight
         loadout.safeBottom = safeBottom

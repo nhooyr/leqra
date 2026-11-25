@@ -40,6 +40,7 @@ function harness(
     }
     classes = new Set()
     classList = {
+      contains: (name) => this.classes.has(name),
       remove: (name) => this.classes.delete(name),
       add: (name) => this.classes.add(name),
       toggle() {},
@@ -182,6 +183,7 @@ function harness(
     return elements.get(id)
   }
   const document = new Element()
+  document.body = new Element()
   byID("infiniteStage").append(byID("infiniteLeaderboardPanel"), byID("infiniteTouchControls"))
   byID("infiniteLeaderboardPanel").append(
     byID("infiniteLeaderboardTitle"),
@@ -2289,6 +2291,22 @@ test("Infinity header toggles the actual scoreboard and restores its disclosure 
     ],
   )
   assert.equal(counters[0].attributes["aria-label"], "Lead (P1): score: 0, rank: #1")
+  infinity.close()
+})
+
+test("tablet Infinity scores use one-line labels and retain complete accessible standings", () => {
+  const { infinity, byID, advance, context } = harness(undefined, true)
+  infinity.start("offline", { name: "Lead", localName: "Wing", roomRules: { infinityRandomBots: false } })
+  context.document.body.classList.add("tablet-header")
+  advance(4)
+  let counters = byID("infiniteKills").children
+  assert.equal(counters[0].children[2].textContent, "score: 0, #1")
+  assert.equal(counters[1].children[2].textContent, "score: 0, #2")
+  assert.equal(counters[0].attributes["aria-label"], "Lead (P1): score: 0, rank: #1")
+  context.document.body.classList.remove("tablet-header")
+  advance(4)
+  counters = byID("infiniteKills").children
+  assert.equal(counters[0].children[2].textContent, "score: 0, rank: #1")
   infinity.close()
 })
 

@@ -14723,7 +14723,8 @@
         failed = navigator.onLine === false
       }
       const pilots = [localPilotIdentity(0), ...(secondLocal() ? [localPilotIdentity(1)] : [])],
-        key = JSON.stringify(pilots)
+        compact = document.body.classList.contains("tablet-header"),
+        key = JSON.stringify([pilots, compact])
       if (key !== personalKey) {
         personalKey = key
         counter.replaceChildren(
@@ -14741,7 +14742,7 @@
             separator.textContent = ": "
             const value = document.createElement("span")
             value.className = "infinite-score-value"
-            value.textContent = total
+            value.textContent = compact ? "score: 0, #0" : total
             row.append(name, separator, value)
             return row
           }),
@@ -14821,7 +14822,7 @@
       }
     }
     const outside = (event) => {
-      if (!bar.contains(event.target)) close()
+      if (!bar.contains(event.target) && !panel.contains(event.target)) close()
     }
     button.onclick = () => {
       panel.open = !panel.open
@@ -18667,8 +18668,9 @@
   const arenaHeaderHomes = new Map()
   function syncArenaHeader() {
     const header = $("gameHeader"),
-      bars = [$("arenaStatusBar"), $("infinityPreviewBar"), $("infiniteStatusbar")]
-    for (const bar of bars)
+      bars = [$("arenaStatusBar"), $("infinityPreviewBar"), $("infiniteStatusbar")],
+      panel = $("infinityPreviewScoreboard")
+    for (const bar of [...bars, panel])
       if (!arenaHeaderHomes.has(bar))
         arenaHeaderHomes.set(bar, { parent: bar.parentElement, next: bar.nextSibling })
     const target = document.body.classList.contains("tablet-header")
@@ -18684,6 +18686,11 @@
         const home = arenaHeaderHomes.get(bar)
         home.parent.insertBefore(bar, home.next?.parentElement === home.parent ? home.next : null)
       }
+    }
+    if (target === $("infinityPreviewBar")) header.insertBefore(panel, null)
+    else if (panel.parentElement === header) {
+      const home = arenaHeaderHomes.get(panel)
+      home.parent.insertBefore(panel, home.next?.parentElement === home.parent ? home.next : null)
     }
   }
   function mountHeader(container) {
@@ -19330,7 +19337,7 @@
     el.textContent =
       "fps: " +
       (frameStats.fps ? Math.round(frameStats.fps) : "—") +
-      (latency === null ? "" : ", ping: " + ping)
+      (latency === null ? "" : (document.body.classList.contains("tablet-header") ? ", " : ", ping: ") + ping)
     el.classList.toggle("fps-low", frameStats.fps > 0 && frameStats.fps < 45)
     el.title =
       (frameStats.fps

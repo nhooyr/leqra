@@ -641,6 +641,7 @@ class MainActivity : Activity() {
             else null
         stage.clipToOutline = rounded
         loadout.compact = landscape || paired
+        loadout.inline = combinedHeader
         loadout.stacked = paired && !landscape
         loadout.safeLeft = safeLeft
         loadout.safeRight = safeRight

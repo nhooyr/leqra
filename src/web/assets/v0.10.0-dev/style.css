@@ -7750,7 +7750,9 @@ body.tablet-header #infiniteArena > .infinite-stage {
 }
 body.tablet-header .header {
   flex-wrap: nowrap;
-  gap: 10px;
+  gap: 6px;
+  align-items: center;
+  position: relative;
   border-bottom: 1px solid var(--border);
 }
 body.tablet-header .header > .arena-bar {
@@ -7761,23 +7763,51 @@ body.tablet-header .header > .arena-bar {
   border: 0;
   background: none;
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: safe center;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 body.tablet-header .header .arena-title,
 body.tablet-header .header .bar-right {
-  flex: 1 1 auto;
-  min-width: 0;
+  display: flex;
+  flex: none;
+  flex-wrap: nowrap;
+  align-items: center;
+  white-space: nowrap;
 }
 body.tablet-header .header .fps-indicator {
   order: 1;
+  flex: none;
+  align-self: center;
+  white-space: nowrap;
 }
 body.tablet-header .header .bar-right {
   order: 2;
+  gap: 6px;
 }
 body.tablet-header .header .mobile-scores {
-  flex-wrap: wrap;
+  flex: none;
+  flex-wrap: nowrap;
   overflow: visible;
+}
+body.tablet-header .header :is(.infinite-personal-scores, .infinite-personal-score, .infinite-score-value) {
+  flex: none;
+  flex-direction: row;
+  white-space: nowrap;
+}
+body.tablet-header .header > .infinity-preview-scoreboard {
+  top: calc(100% + 4px);
+  right: 4px;
+  width: min(280px, calc(100% - 8px));
+  max-height: 50dvh;
+  z-index: 7;
+}
+body.tablet-header .header > .brand,
+body.tablet-header .header-right {
+  flex: none;
 }
 body.tablet-header .brand-sub {
   display: none;
@@ -7793,6 +7823,27 @@ body.tablet-header .header-right .icon-btn {
 }
 body.tablet-header .showcase-dialog[open] {
   grid-template-rows: auto minmax(0, 1fr) auto;
+}
+@media (max-width: 960px) {
+  body.tablet-header .header .github-version {
+    display: none;
+  }
+  body.tablet-header .header .infinite-scoreboard-toggle {
+    position: relative;
+    width: 30px;
+    min-width: 30px;
+    padding: 0;
+    overflow: hidden;
+    text-indent: -9999px;
+  }
+  body.tablet-header .header .infinite-scoreboard-toggle::after {
+    content: "";
+    position: absolute;
+    inset: 6px;
+    background: var(--accent-ink);
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 11h4v10H3zm7-8h4v18h-4zm7 5h4v13h-4z'/%3E%3C/svg%3E")
+      center / contain no-repeat;
+  }
 }
 @media (max-width: 760px) {
   body.tablet-header .brand-name {

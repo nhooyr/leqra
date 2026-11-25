@@ -34,6 +34,14 @@ internal class NativeHudView(context: Context) : View(context) {
             invalidate()
         }
 
+    var inline = false
+        set(value) {
+            if (field == value) return
+            field = value
+            requestLayout()
+            invalidate()
+        }
+
     var safeLeft = 0
     var safeRight = 0
     var safeBottom = 0
@@ -221,7 +229,10 @@ internal class NativeHudView(context: Context) : View(context) {
                         content.weapon.length > old.weapon.length ||
                         content.buffs.length > old.buffs.length ||
                         (content.firingSeconds != null) != (old.firingSeconds != null) ||
-                        content.unlimited != old.unlimited
+                        content.unlimited != old.unlimited ||
+                        inline &&
+                            (content.locked != old.locked ||
+                                content.readiness.length > old.readiness.length)
                 )
                     layoutMayGrow = true
                 slot.content = content
@@ -279,6 +290,18 @@ internal class NativeHudView(context: Context) : View(context) {
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val width = MeasureSpec.getSize(widthMeasureSpec)
         val columns = if (stacked) 1 else max(1, slots.size)
+        if (inline) {
+            val usable = (width - safeLeft - safeRight) / density - 26f
+            val cellWidth = (usable - if (columns > 1) 16f else 0f) / columns
+            val rowHeight =
+                max(28f * fontScale, slots.maxOfOrNull { inlineHeight(it, cellWidth) + 12f } ?: 28f)
+            val height = rowHeight * if (stacked) max(1, slots.size) else 1
+            setMeasuredDimension(
+                width,
+                resolveSize(ceil(height * density + safeBottom).toInt(), heightMeasureSpec),
+            )
+            return
+        }
         var height =
             (if (compact) if (columns > 1) 84f else 54f else if (columns > 1) 136f else 97f) *
                 fontScale
@@ -420,6 +443,10 @@ internal class NativeHudView(context: Context) : View(context) {
 
     private fun drawSlot(canvas: Canvas, slot: Slot, x: Float, width: Float, height: Float) {
         val content = slot.content ?: return
+        if (inline) {
+            drawInlineSlot(canvas, slot, content, x, width, height)
+            return
+        }
         if (compact) {
             val identityWidth = min(190f, width * .28f)
             val identityHeight =
@@ -534,6 +561,110 @@ internal class NativeHudView(context: Context) : View(context) {
                 content.color,
             )
         }
+    }
+
+    private data class InlineWidths(
+        val identity: Float,
+        val ammo: Float,
+        val weapon: Float,
+        val buffs: Float,
+        val readiness: Float,
+        val progress: Float,
+    )
+
+    private fun inlineWidths(width: Float, content: Content): InlineWidths {
+        val identity = min(180f, width * .25f)
+        val ammo =
+            if (content.firingSeconds != null) min(112f, width * .2f)
+            else if (content.unlimited) 25f else 60f
+        val readiness = min(120f * fontScale, width * .22f)
+        val progress = min(48f, width * .1f)
+        val details =
+            max(
+                1f,
+                width -
+                    identity -
+                    ammo -
+                    readiness -
+                    progress -
+                    if (content.buffs.isEmpty()) 32f else 40f,
+            )
+        val buffs = if (content.buffs.isEmpty()) 0f else details * .45f
+        return InlineWidths(identity, ammo, details - buffs, buffs, readiness, progress)
+    }
+
+    private fun inlineHeight(slot: Slot, width: Float): Float {
+        val content = slot.content ?: return 16f
+        val widths = inlineWidths(width, content)
+        val ammoHeight =
+            if (content.firingSeconds != null)
+                slot.ammunition.measure("FIRE LEFT 3.0 / 3s", widths.ammo) + 6f
+            else 19f
+        return maxOf(
+            slot.identity.measure(content.identity, widths.identity) +
+                if (content.locked) 3f + slot.lock.measure("⚠ HOMING LOCK", widths.identity)
+                else 0f,
+            slot.weapon.measure(content.weapon, widths.weapon),
+            slot.buffs.measure(content.buffs, widths.buffs),
+            slot.readiness.measure(content.readiness, widths.readiness),
+            ammoHeight,
+        )
+    }
+
+    private fun drawInlineSlot(
+        canvas: Canvas,
+        slot: Slot,
+        content: Content,
+        x: Float,
+        width: Float,
+        height: Float,
+    ) {
+        val widths = inlineWidths(width, content)
+        var left = x
+        fun text(block: TextBlock, value: String, available: Float, color: Int) {
+            val textHeight = block.measure(value, available)
+            block.draw(canvas, value, left, (height - textHeight) / 2, available, color)
+            left += available + 8f
+        }
+        val identityHeight = slot.identity.measure(content.identity, widths.identity)
+        val lockHeight =
+            if (content.locked) 3f + slot.lock.measure("⚠ HOMING LOCK", widths.identity) else 0f
+        val identityY = (height - identityHeight - lockHeight) / 2
+        slot.identity.draw(
+            canvas,
+            content.identity,
+            left,
+            identityY,
+            widths.identity,
+            content.color,
+        )
+        if (content.locked)
+            slot.lock.draw(
+                canvas,
+                "⚠ HOMING LOCK",
+                left,
+                identityY + identityHeight + 3f,
+                widths.identity,
+                NativeStyle.danger,
+            )
+        left += widths.identity + 8f
+        val ammoHeight =
+            if (content.firingSeconds != null)
+                slot.ammunition.measure("FIRE LEFT 3.0 / 3s", widths.ammo) + 6f
+            else 19f
+        drawAmmo(canvas, slot, left, (height - ammoHeight) / 2, widths.ammo)
+        left += widths.ammo + 8f
+        text(slot.weapon, content.weapon, widths.weapon, NativeStyle.accent)
+        if (widths.buffs > 0f) text(slot.buffs, content.buffs, widths.buffs, 0xff75f0cb.toInt())
+        text(slot.readiness, content.readiness, widths.readiness, NativeStyle.soft)
+        progress(
+            canvas,
+            slot.progressAt(frameNanos),
+            left,
+            (height - 3f) / 2,
+            widths.progress,
+            content.color,
+        )
     }
 
     private fun compactReadinessWidth(width: Float, content: Content): Float {

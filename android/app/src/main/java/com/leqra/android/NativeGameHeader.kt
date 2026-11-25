@@ -8,9 +8,11 @@ import android.graphics.drawable.RippleDrawable
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.HorizontalScrollView
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.TextView
 import com.leqra.android.NativeStyle.add
 import com.leqra.android.NativeStyle.background
 import com.leqra.android.NativeStyle.button
@@ -51,6 +53,13 @@ internal class NativeGameHeader(
         }
     private val menuButton = iconButton(openMenu)
     private val spacer = View(context)
+    private val statusScroll =
+        HorizontalScrollView(context).apply {
+            isHorizontalScrollBarEnabled = false
+            isFillViewport = true
+        }
+    private var status: NativeStatusView? = null
+    private lateinit var versionBadge: TextView
     private var combinedStatus = false
     private var soundMuted: Boolean? = null
     private var fullscreenActive: Boolean? = null
@@ -73,9 +82,11 @@ internal class NativeGameHeader(
         add(brand, width = -2, gap = 0)
         add(
             label(context, BuildConfig.VERSION_NAME, 10f, NativeStyle.muted, mono = true).apply {
+                versionBadge = this
                 contentDescription = "View leqra on GitHub"
                 gravity = Gravity.CENTER_VERTICAL
                 minHeight = context.dp(32)
+                minimumWidth = context.dp(32)
                 setPaddingRelative(context.dp(5), 0, context.dp(5), 0)
                 compoundDrawablePadding = context.dp(4)
                 setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_github, 0, 0, 0)
@@ -96,19 +107,24 @@ internal class NativeGameHeader(
     }
 
     fun placeStatus(status: NativeStatusView, combined: Boolean) {
+        this.status = status
         combinedStatus = combined
+        if (!combined) status.configureInline(false, false)
         status.setBackgroundColor(
             if (combined) android.graphics.Color.TRANSPARENT else NativeStyle.surface,
         )
-        if (combined && status.parent !== this) {
+        if (combined && status.parent !== statusScroll) {
             (status.parent as? ViewGroup)?.removeView(status)
-            addView(status, indexOfChild(spacer), LayoutParams(0, -2, 1f))
-        } else if (!combined && status.parent === this) {
-            removeView(status)
+            statusScroll.addView(status, ViewGroup.LayoutParams(-2, -2))
+            addView(statusScroll, indexOfChild(spacer), LayoutParams(0, -2, 1f))
+        } else if (!combined && status.parent === statusScroll) {
+            statusScroll.removeView(status)
+            removeView(statusScroll)
             (parent as? LinearLayout)?.let {
                 it.addView(status, it.indexOfChild(this) + 1, LayoutParams(-1, -2))
             }
         }
+        statusScroll.visibility = status.visibility
         spacer.visibility = if (combined && status.visibility == VISIBLE) GONE else VISIBLE
     }
 
@@ -126,10 +142,34 @@ internal class NativeGameHeader(
             combinedStatus && widthDp < 960 ||
                 widthDp < (if (sidebarVisible) 390 else 375) ||
                 (roomCode != null && widthDp < 500)
+        val compactVersion = combinedStatus && widthDp < 960
+        val version = if (compactVersion) "" else BuildConfig.VERSION_NAME
+        if (versionBadge.text.toString() != version) versionBadge.text = version
+        versionBadge.tooltipText = "leqra ${BuildConfig.VERSION_NAME}"
+        versionBadge.contentDescription =
+            if (compactVersion) "View leqra ${BuildConfig.VERSION_NAME} on GitHub"
+            else "View leqra on GitHub"
+        status?.configureInline(combinedStatus, compactVersion)
+        if (combinedStatus)
+            status?.leaderboardButton?.let {
+                if (it.parent !== this) {
+                    (it.parent as? ViewGroup)?.removeView(it)
+                    addView(it, indexOfChild(roomButton))
+                }
+                (it.layoutParams as LayoutParams).marginEnd = context.dp(4)
+            }
         brandSubtitle.visibility =
             if (combinedStatus || landscape || (compact && sidebarVisible)) View.GONE
             else View.VISIBLE
-        brandMark.visibility = if (compact) GONE else VISIBLE
+        brandMark.visibility = if (compact && !combinedStatus) GONE else VISIBLE
+        val markSize = context.dp(if (combinedStatus) 28 else 36)
+        if (brandMark.layoutParams.width != markSize) {
+            brandMark.layoutParams =
+                (brandMark.layoutParams as LayoutParams).apply {
+                    width = markSize
+                    height = markSize
+                }
+        }
         sidebarButton.visibility = if (sidebarVisible) VISIBLE else GONE
         val brandGap = context.dp(if (compact) 4 else 8)
         if (brand.paddingEnd != brandGap) brand.setPaddingRelative(0, 0, brandGap, 0)

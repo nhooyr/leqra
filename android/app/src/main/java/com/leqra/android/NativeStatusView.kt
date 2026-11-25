@@ -8,6 +8,7 @@ import android.text.TextUtils
 import android.text.style.ForegroundColorSpan
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -41,6 +42,11 @@ internal class NativeStatusView(context: Context, openScores: () -> Unit) : Line
         NativeStyle.label(context, "", 10f, NativeStyle.accent, mono = true)
     private val round = NativeStyle.label(context, "", 10f, NativeStyle.text, mono = true)
     private val clock = NativeStyle.label(context, "", 10f, NativeStyle.accent, mono = true)
+    private val left = LinearLayout(context)
+    private val middle = LinearLayout(context)
+    private val rawValues = HashMap<TextView, CharSequence>()
+    private var inline = false
+    private var compactIcon = false
     private val scores =
         Button(context).apply {
             text = "LEADERBOARD"
@@ -60,6 +66,31 @@ internal class NativeStatusView(context: Context, openScores: () -> Unit) : Line
         private set
 
     private var scoreKey: String? = null
+    val leaderboardButton: View
+        get() = scores
+
+    fun configureInline(value: Boolean, compact: Boolean) {
+        if (inline != value) {
+            inline = value
+            arrangeRows()
+            for ((view, text) in rawValues) {
+                view.text = formattedValue(view, text)
+                view.contentDescription = if (inline) text else null
+            }
+        }
+        val icon = value && compact
+        if (compactIcon != icon) {
+            compactIcon = icon
+            scores.text = if (icon) "" else "LEADERBOARD"
+            scores.setCompoundDrawablesWithIntrinsicBounds(
+                if (icon) NativeStyle.icon(context, "leaderboard", true) else null,
+                null,
+                null,
+                null,
+            )
+            scores.layoutParams = LayoutParams(if (icon) context.dp(34) else -2, context.dp(30))
+        }
+    }
 
     fun showShowcase(snapshot: ArenaSnapshot, localID: Int, fps: Int, ping: Int, showFPS: Boolean) {
         showTitle("● PUBLIC INFINITY")
@@ -98,15 +129,45 @@ internal class NativeStatusView(context: Context, openScores: () -> Unit) : Line
         setBackgroundColor(NativeStyle.surface)
         setPadding(context.dp(12), context.dp(6), context.dp(12), context.dp(6))
         minimumHeight = context.dp(39)
-        val left =
-            LinearLayout(context).apply {
+        arrangeRows()
+    }
+
+    private fun arrangeRows() {
+        gravity = if (inline) Gravity.CENTER else Gravity.CENTER_VERTICAL
+        removeAllViews()
+        left.removeAllViews()
+        middle.removeAllViews()
+        (scores.parent as? ViewGroup)?.removeView(scores)
+        for (view in
+            listOf(title, count, score, finitePerformance, infinityPerformance, round, clock)) {
+            view.setSingleLine(inline)
+        }
+        if (inline) {
+            for (view in
+                listOf(
+                    title,
+                    count,
+                    finitePerformance,
+                    infinityPerformance,
+                    score,
+                    round,
+                    clock,
+                )) {
+                addView(
+                    view,
+                    LayoutParams(-2, if (view === scores) context.dp(30) else -2).apply {
+                        marginEnd = context.dp(12)
+                    },
+                )
+            }
+        } else {
+            left.apply {
                 orientation = VERTICAL
                 addView(title, LayoutParams(-1, -2))
                 addView(count, LayoutParams(-1, -2).apply { topMargin = context.dp(3) })
                 addView(finitePerformance, LayoutParams(-1, -2).apply { topMargin = context.dp(3) })
             }
-        val middle =
-            LinearLayout(context).apply {
+            middle.apply {
                 orientation = VERTICAL
                 gravity = Gravity.CENTER
                 score.gravity = Gravity.CENTER
@@ -117,15 +178,16 @@ internal class NativeStatusView(context: Context, openScores: () -> Unit) : Line
                 )
                 addView(score, LayoutParams(-1, -2))
             }
-        addView(left, LayoutParams(0, -2, 1f).apply { marginEnd = context.dp(6) })
-        addView(middle, LayoutParams(0, -2, 1.2f).apply { marginEnd = context.dp(6) })
-        addView(round, LayoutParams(-2, -2).apply { marginEnd = context.dp(6) })
-        addView(clock, LayoutParams(-2, -2).apply { marginEnd = context.dp(6) })
-        addView(scores, LayoutParams(-2, context.dp(30)))
+            addView(left, LayoutParams(0, -2, 1f).apply { marginEnd = context.dp(6) })
+            addView(middle, LayoutParams(0, -2, 1.2f).apply { marginEnd = context.dp(6) })
+            addView(round, LayoutParams(-2, -2).apply { marginEnd = context.dp(6) })
+            addView(clock, LayoutParams(-2, -2).apply { marginEnd = context.dp(6) })
+            addView(scores, LayoutParams(-2, context.dp(30)))
+        }
     }
 
     private fun showMode(infinity: Boolean, preview: Boolean) {
-        val height = context.dp(if (preview) 52 else 39)
+        val height = context.dp(if (inline) 32 else if (preview) 52 else 39)
         if (minimumHeight != height) minimumHeight = height
         val finiteVisibility = if (infinity) View.GONE else View.VISIBLE
         round.visibility = finiteVisibility
@@ -228,7 +290,9 @@ internal class NativeStatusView(context: Context, openScores: () -> Unit) : Line
                     )
                     if (++shown >= 8) break
                 }
+                rawValues[score] = values
                 score.text = values
+                score.contentDescription = if (inline) values else null
                 textUpdates++
             }
             val seconds =
@@ -246,9 +310,22 @@ internal class NativeStatusView(context: Context, openScores: () -> Unit) : Line
     }
 
     private fun TextView.value(value: CharSequence) {
-        if (!TextUtils.equals(text, value)) {
-            text = value
+        rawValues[this] = value
+        val shown = formattedValue(this, value)
+        contentDescription = if (inline) value else null
+        if (!TextUtils.equals(text, shown)) {
+            text = shown
             textUpdates++
+        }
+    }
+
+    private fun formattedValue(view: TextView, value: CharSequence): CharSequence {
+        if (!inline || value !is String) return value
+        return when (view) {
+            score -> value.replace(", rank: #", ", #")
+            finitePerformance,
+            infinityPerformance -> value.replace(", ping: ", ", ")
+            else -> value
         }
     }
 }

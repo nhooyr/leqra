@@ -125,6 +125,7 @@ test("tablet header moves each live status row once and restores its original po
     "actions",
     "shell",
     "infinityPreviewBar",
+    "infinityPreviewScoreboard",
     "arenaStatusBar",
     "stage",
     "dialog",
@@ -139,6 +140,7 @@ test("tablet header moves each live status row once and restores its original po
   append("root", "gameHeader", "shell")
   append("gameHeader", "actions")
   append("shell", "infinityPreviewBar", "arenaStatusBar", "stage")
+  append("infinityPreviewBar", "infinityPreviewScoreboard")
   append("dialog", "infiniteHeader", "infiniteStatusbar", "infiniteStage")
   $("infinityPreviewBar").hidden = true
   const s = { $, document: { body }, arenaHeaderHomes: new Map() }
@@ -150,6 +152,7 @@ test("tablet header moves each live status row once and restores its original po
   $("infinityPreviewBar").hidden = false
   s.syncArenaHeader()
   assert.equal($("infinityPreviewBar").parentElement, $("gameHeader"))
+  assert.equal($("infinityPreviewScoreboard").parentElement, $("gameHeader"))
   assert.deepEqual(
     $("shell").children.map((child) => child.id),
     ["arenaStatusBar", "stage"],
@@ -157,6 +160,7 @@ test("tablet header moves each live status row once and restores its original po
   append("infiniteHeader", "gameHeader")
   s.syncArenaHeader()
   s.syncArenaHeader()
+  assert.equal($("infinityPreviewScoreboard").parentElement, $("infinityPreviewBar"))
   assert.deepEqual(
     $("gameHeader").children.map((child) => child.id),
     ["infiniteStatusbar", "actions"],

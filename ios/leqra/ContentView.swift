@@ -39,7 +39,7 @@ struct ContentView: View {
                         } else if session.screen == .connecting {
                             connecting
                         } else {
-                            game(landscape: landscape, bottomInset: bottomInset)
+                            game(landscape: landscape, bottomInset: bottomInset, width: geometry.size.width)
                         }
                     }.padding(.horizontal, session.screen == .playing && session.isInfinity ? 0 : 9)
                         .padding(.top, landscape ? 5 : 9).padding(
@@ -111,8 +111,11 @@ struct ContentView: View {
                         showsTouchControls: !NativePlatform.isDesktop
                     )
                     .accessibilityIdentifier("showcaseStage")
-                    PilotLoadoutView(session: session, compact: landscape, showcase: frame)
-                        .allowsHitTesting(false)
+                    PilotLoadoutView(
+                        session: session, compact: landscape || statusInHeader, showcase: frame,
+                        inline: statusInHeader && width >= 600, availableWidth: width
+                    )
+                    .allowsHitTesting(false)
                     if statusAtBottom {
                         ArenaStatusBar(session: session, showcase: frame, atBottom: true)
                             .allowsHitTesting(false)
@@ -158,7 +161,7 @@ struct ContentView: View {
         }.frame(maxWidth: 400).padding(20).frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func game(landscape: Bool, bottomInset: CGFloat) -> some View {
+    private func game(landscape: Bool, bottomInset: CGFloat, width: CGFloat) -> some View {
         let split = session.isInfinity && session.secondaryLocalID != nil
         let canControl = !session.spectating || session.secondaryLocalID != nil
         let desktopPair = NativePlatform.isDesktop && !session.spectating && session.secondaryLocalID != nil
@@ -172,10 +175,12 @@ struct ContentView: View {
                 objectiveBar(objective)
             }
             if canControl {
-                LocalPilotLoadouts(session: session, landscape: landscape)
-                    .overlay(alignment: .bottom) {
-                        WebStyle.border.frame(height: 1).allowsHitTesting(false)
-                    }
+                LocalPilotLoadouts(
+                    session: session, landscape: landscape, tablet: statusInHeader, availableWidth: width
+                )
+                .overlay(alignment: .bottom) {
+                    WebStyle.border.frame(height: 1).allowsHitTesting(false)
+                }
             }
             ZStack(alignment: .topTrailing) {
                 if split {

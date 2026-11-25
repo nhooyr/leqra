@@ -441,6 +441,7 @@ final class GameUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(loadout.frame.minY, stage.frame.maxY)
         if UIDevice.current.userInterfaceIdiom == .pad {
             XCTAssertLessThanOrEqual(status.frame.maxY, stage.frame.minY)
+            XCTAssertEqual(status.frame.midY, header.frame.midY, accuracy: 2)
         } else {
             XCTAssertLessThanOrEqual(status.frame.maxY, stage.frame.minY)
         }
@@ -467,6 +468,7 @@ final class GameUITests: XCTestCase {
         XCTAssertTrue(loadout.exists)
         if UIDevice.current.userInterfaceIdiom == .pad {
             XCTAssertLessThanOrEqual(status.frame.maxY, stage.frame.minY)
+            XCTAssertEqual(status.frame.midY, header.frame.midY, accuracy: 2)
         } else {
             XCTAssertLessThanOrEqual(status.frame.maxY, stage.frame.minY)
         }
@@ -1357,6 +1359,7 @@ final class GameUITests: XCTestCase {
                     XCTAssertTrue(leaderboard.isHittable, context)
                     XCTAssertTrue(header.frame.contains(leaderboard.frame), context)
                 }
+                assertTabletRows(in: app, stage: stage, ready: mode == "ready", context: context)
                 capture(app, name: context)
             }
         }
@@ -1385,21 +1388,36 @@ final class GameUITests: XCTestCase {
                 let header = app.descendants(matching: .any)["gameHeader"].firstMatch
                 let status = app.descendants(matching: .any)["arenaStatusBar"].firstMatch
                 let stage = arena(in: app)
+                XCTAssertFalse(header.staticTexts["TANK ARENA"].exists)
                 XCTAssertLessThanOrEqual(header.frame.width, CGFloat(width) + 1)
-                XCTAssertTrue(header.frame.contains(status.frame))
+                XCTAssertTrue(status.exists)
                 XCTAssertLessThanOrEqual(header.frame.maxY, stage.frame.minY + 1)
-                for identifier in ["brand", "arenaTitle", "gameScore"] {
-                    let item = app.descendants(matching: .any)[identifier].firstMatch
-                    XCTAssertTrue(item.exists, identifier)
-                    XCTAssertTrue(header.frame.contains(item.frame), identifier)
-                }
+                let brand = app.staticTexts["brand"]
+                XCTAssertTrue(header.frame.contains(brand.frame))
+                let lane = app.scrollViews["tabletStatusScroll"]
+                XCTAssertTrue(lane.exists)
+                XCTAssertTrue(header.frame.contains(lane.frame))
+                capture(app, name: "Tablet \(width)-point \(fixed ? "fixed" : "Infinity") header start")
                 let fps = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'fps:'")).firstMatch
-                XCTAssertTrue(fps.exists)
-                XCTAssertTrue(header.frame.contains(fps.frame))
+                var items = [
+                    app.descendants(matching: .any)["arenaTitle"].firstMatch, fps,
+                    app.descendants(matching: .any)["gameScore"].firstMatch,
+                ]
+                if fixed {
+                    items.append(
+                        app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'ROUND'")).firstMatch)
+                    items.append(app.staticTexts["00:00"])
+                } else {
+                    items.append(app.buttons["toggleStandings"])
+                }
+                for item in items {
+                    XCTAssertTrue(item.exists)
+                    revealTabletHeaderItem(item, in: lane)
+                    XCTAssertEqual(item.frame.midY, brand.frame.midY, accuracy: 2)
+                }
                 XCTAssertTrue(app.buttons["pauseGame"].isHittable)
                 let more = app.buttons["More game controls"]
                 XCTAssertTrue(more.isHittable)
-                if !fixed { XCTAssertTrue(app.buttons["toggleStandings"].isHittable) }
                 capture(app, name: "Tablet \(width)-point \(fixed ? "fixed" : "Infinity") header")
                 if width == 320 && !fixed {
                     more.tap()
@@ -1407,6 +1425,32 @@ final class GameUITests: XCTestCase {
                 }
             }
         }
+    }
+
+    @MainActor
+    func testTabletPilotRowWrapsLongCallsigns() {
+        let name = String(repeating: "界", count: 16)
+        let app = launch(
+            callsign: name,
+            arguments: ["--probe-native-layout", "--probe-content-width", "320"])
+        defer { app.terminate() }
+        selectPublic(false, in: app)
+        selectMode("infinity", in: app)
+        play(in: app)
+        let stage = arena(in: app)
+        let header = app.descendants(matching: .any)["gameHeader"].firstMatch
+        let identity = app.staticTexts["pilotIdentity"]
+        XCTAssertEqual(identity.label, name + " (P1)")
+        XCTAssertGreaterThan(identity.frame.height, 18, "Long callsigns wrap instead of shrinking")
+        for identifier in ["pilotIdentity", "pilotAmmo", "pilotWeapon", "pilotReadiness"] {
+            let item = app.descendants(matching: .any)[identifier].firstMatch
+            XCTAssertTrue(item.exists, identifier)
+            XCTAssertGreaterThanOrEqual(item.frame.minX, header.frame.minX, identifier)
+            XCTAssertLessThanOrEqual(item.frame.maxX, header.frame.maxX, identifier)
+            XCTAssertGreaterThanOrEqual(item.frame.minY, header.frame.maxY - 1, identifier)
+            XCTAssertLessThanOrEqual(item.frame.maxY, stage.frame.minY + 1, identifier)
+        }
+        capture(app, name: "Tablet narrow pilot row wraps the complete callsign")
     }
 
     @MainActor
@@ -2984,6 +3028,66 @@ final class GameUITests: XCTestCase {
         XCTAssertGreaterThan(element.frame.width, 100)
         XCTAssertGreaterThan(element.frame.height, 100)
         return element
+    }
+
+    @MainActor
+    private func revealTabletHeaderItem(_ item: XCUIElement, in lane: XCUIElement) {
+        for trailing in [false, true] {
+            for _ in 0..<8 {
+                let viewport = lane.frame
+                let frame = item.frame
+                let edge = trailing ? frame.maxX : frame.minX
+                if edge >= viewport.minX - 1 && edge <= viewport.maxX + 1 { break }
+                let delta = viewport.midX - edge
+                let direction: CGFloat = delta > 0 ? 1 : -1
+                let distance = min(viewport.width * 0.6, max(24, abs(delta)))
+                let center = lane.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                center.withOffset(CGVector(dx: -direction * distance / 2, dy: 0))
+                    .press(
+                        forDuration: 0.05,
+                        thenDragTo: center.withOffset(CGVector(dx: direction * distance / 2, dy: 0)),
+                        withVelocity: .slow, thenHoldForDuration: 0.1)
+            }
+            let viewport = lane.frame.insetBy(dx: -1, dy: -1)
+            let edge = trailing ? item.frame.maxX : item.frame.minX
+            XCTAssertGreaterThanOrEqual(edge, viewport.minX, "Reachable leading/trailing header edge")
+            XCTAssertLessThanOrEqual(edge, viewport.maxX, "Reachable leading/trailing header edge")
+        }
+        if item.elementType == .button { XCTAssertTrue(item.isHittable) }
+    }
+
+    @MainActor
+    private func assertTabletRows(
+        in app: XCUIApplication, stage: XCUIElement, ready: Bool, context: String
+    ) {
+        let header = app.descendants(matching: .any)["gameHeader"].firstMatch
+        let brand = app.staticTexts["brand"]
+        XCTAssertFalse(header.staticTexts["TANK ARENA"].exists, context)
+        XCTAssertLessThanOrEqual(header.frame.height, 58, "One compact tablet header row: " + context)
+        let rowY = brand.frame.midY
+        for identifier in ["arenaTitle", "gameScore"] {
+            let item = app.descendants(matching: .any)[identifier].firstMatch
+            XCTAssertTrue(item.exists, context + " " + identifier)
+            XCTAssertEqual(item.frame.midY, rowY, accuracy: 2, context + " " + identifier)
+            XCTAssertLessThanOrEqual(item.frame.height, 18, context + " " + identifier)
+        }
+        let fps = header.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'fps:'")).firstMatch
+        XCTAssertTrue(fps.exists, context)
+        XCTAssertEqual(fps.frame.midY, rowY, accuracy: 2, context + " FPS")
+        let action = ready ? header.buttons["Controls"] : app.buttons["pauseGame"]
+        XCTAssertEqual(action.frame.midY, rowY, accuracy: 2, context + " header action")
+        if !ready {
+            let identity = app.staticTexts["pilotIdentity"]
+            let pilotY = identity.frame.midY
+            for identifier in ["pilotAmmo", "pilotWeapon", "pilotReadiness"] {
+                let item = app.descendants(matching: .any)[identifier].firstMatch
+                XCTAssertTrue(item.exists, context + " " + identifier)
+                XCTAssertEqual(item.frame.midY, pilotY, accuracy: 2, context + " " + identifier)
+                XCTAssertLessThanOrEqual(item.frame.maxY, stage.frame.minY + 1, context + " " + identifier)
+            }
+            XCTAssertLessThanOrEqual(
+                stage.frame.minY - header.frame.maxY, 60, "One compact pilot row: " + context)
+        }
     }
 
     @MainActor

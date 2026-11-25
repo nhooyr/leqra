@@ -759,7 +759,9 @@ class MainActivityTest {
                     "Showcase uses the same device-specific status placement",
                     if (activity.resources.configuration.smallestScreenWidthDp >= 600) shown.header
                     else shown,
-                    shown.status.parent,
+                    if (activity.resources.configuration.smallestScreenWidthDp >= 600)
+                        (shown.status.parent as View).parent
+                    else shown.status.parent,
                 )
                 val pauseButton =
                     (0 until shown.header.childCount).map(shown.header::getChildAt).single {
@@ -811,7 +813,9 @@ class MainActivityTest {
                     "Showcase keeps status placement after rotation",
                     if (activity.resources.configuration.smallestScreenWidthDp >= 600) shown.header
                     else shown,
-                    shown.status.parent,
+                    if (activity.resources.configuration.smallestScreenWidthDp >= 600)
+                        (shown.status.parent as View).parent
+                    else shown.status.parent,
                 )
             }
             screenshot("showcase-landscape")
@@ -2698,8 +2702,16 @@ class MainActivityTest {
                 assertEquals(1, descendants(root).count { it is NativeStatusView })
                 assertTrue("Arena status is visible", status.isShown && status.height > 0)
                 if (tablet) {
-                    assertSame("Tablets combine status with the top header", header, status.parent)
-                    assertTrue(status.bottom <= header.height)
+                    assertTrue(
+                        "Tablet status is one scrolling row",
+                        status.parent is android.widget.HorizontalScrollView,
+                    )
+                    assertSame(
+                        "Tablets combine status with the top header",
+                        header,
+                        (status.parent as View).parent,
+                    )
+                    assertTrue(status.height <= header.height)
                 } else {
                     assertTrue(
                         "Phone arena status sits below the main header",
@@ -2757,6 +2769,7 @@ class MainActivityTest {
                     )
                 }
                 if (session.screen == Screen.PLAYING) {
+                    assertEquals(tablet, (loadout as NativeHudView).inline)
                     val margins = stage.layoutParams as ViewGroup.MarginLayoutParams
                     assertEquals(
                         0,
