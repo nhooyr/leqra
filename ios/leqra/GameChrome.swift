@@ -70,7 +70,9 @@ struct GameHeader: View {
                     session.showControls = true
                 }
             }
-        }.padding(.horizontal, 4).padding(.bottom, landscape ? 5 : 10)
+        }.buttonStyle(.plain)
+            .frame(minHeight: NativePlatform.isDesktop ? 44 : nil)
+            .padding(.horizontal, 4).padding(.bottom, landscape ? 5 : 10)
     }
     private var versionBadge: some View {
         ViewThatFits(in: .horizontal) {

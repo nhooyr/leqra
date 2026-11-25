@@ -46,59 +46,64 @@ struct PauseCard: View {
         GeometryReader { geometry in
             ZStack {
                 Color(hex: "#091218").opacity(0.75).ignoresSafeArea()
-                ScrollView {
-                    VStack(spacing: 12) {
-                        WebPanel(accent: true) {
-                            if landscape {
-                                HStack(alignment: .top, spacing: 24) {
-                                    intro
-                                    actions
-                                }
-                            } else {
-                                VStack(alignment: .leading, spacing: 18) {
-                                    intro
-                                    actions
-                                }
-                            }
-                        }
-                        if session.isInfinity {
-                            WebPanel {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("LEADERBOARD").font(WebStyle.mono()).foregroundStyle(WebStyle.accent)
-                                    ForEach(
-                                        Array(session.standings.prefix(10).enumerated()), id: \.element.id
-                                    ) { index, entry in
-                                        let seat = session.localPilotSeat(entry.id)
-                                        HStack(alignment: .top) {
-                                            Text(
-                                                "\(index + 1). " + entry.displayName
-                                                    + (seat.map { " (P\($0))" } ?? "")
-                                            )
-                                            .fontWeight(seat != nil ? .bold : .regular).fixedSize(
-                                                horizontal: false, vertical: true)
-                                            if let difficulty = entry.difficultyLabel {
-                                                Text(difficulty).font(WebStyle.mono()).foregroundStyle(
-                                                    WebStyle.muted)
-                                            }
-                                            Spacer()
-                                            Text("\(entry.score)").bold()
-                                        }.font(.system(size: 12)).foregroundStyle(
-                                            WebStyle.paint(entry.colorIndex))
-                                    }
-                                    Text("+1 per kill, -1 per death").font(.system(size: 11)).foregroundStyle(
-                                        WebStyle.soft)
-                                }
-                            }
-                            WebPanel { FieldManualContent(session: session) }
-                        }
-                    }.frame(maxWidth: landscape ? 650 : 400).padding(12)
-                }.frame(
-                    width: geometry.size.width,
-                    height: max(0, min(geometry.size.height - 24, landscape ? 320 : 620))
-                )
-                .accessibilityIdentifier("pauseMenuScroll")
+                WebPanel(accent: true) {
+                    ViewThatFits(in: .vertical) {
+                        menuContent.fixedSize(horizontal: false, vertical: true)
+                        ScrollView { menuContent }
+                            .accessibilityIdentifier("pauseMenuScroll")
+                    }
+                }.frame(maxWidth: landscape ? 650 : 400)
+                    .frame(maxHeight: max(0, geometry.size.height - 24))
+                    .padding(12)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("pauseMenuCard")
             }.frame(width: geometry.size.width, height: geometry.size.height)
         }.onAppear { originalCallsign = session.callsign }
+    }
+    private var menuContent: some View {
+        VStack(spacing: 12) {
+            if landscape {
+                HStack(alignment: .top, spacing: 24) {
+                    intro
+                    actions
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 18) {
+                    intro
+                    actions
+                }
+            }
+            if session.isInfinity {
+                WebPanel {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("LEADERBOARD").font(WebStyle.mono()).foregroundStyle(WebStyle.accent)
+                        ForEach(
+                            Array(session.standings.prefix(10).enumerated()), id: \.element.id
+                        ) { index, entry in
+                            let seat = session.localPilotSeat(entry.id)
+                            HStack(alignment: .top) {
+                                Text(
+                                    "\(index + 1). " + entry.displayName
+                                        + (seat.map { " (P\($0))" } ?? "")
+                                )
+                                .fontWeight(seat != nil ? .bold : .regular).fixedSize(
+                                    horizontal: false, vertical: true)
+                                if let difficulty = entry.difficultyLabel {
+                                    Text(difficulty).font(WebStyle.mono()).foregroundStyle(
+                                        WebStyle.muted)
+                                }
+                                Spacer()
+                                Text("\(entry.score)").bold()
+                            }.font(.system(size: 12)).foregroundStyle(
+                                WebStyle.paint(entry.colorIndex))
+                        }
+                        Text("+1 per kill, -1 per death").font(.system(size: 11)).foregroundStyle(
+                            WebStyle.soft)
+                    }
+                }
+                WebPanel { FieldManualContent(session: session) }
+            }
+        }
     }
     private var intro: some View {
         VStack(alignment: .leading, spacing: 12) {

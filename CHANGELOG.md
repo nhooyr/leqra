@@ -5,6 +5,7 @@
 - Add a macOS app built from the shared iOS codebase, with resizable windows, desktop keyboard and mouse controls, and Mac App Store archive support.
 - Let Escape close the ready-room leaderboard on macOS and clarify the separate P1/P2 keyboard layouts.
 - Fix Keychain access in local macOS builds so saving an account key no longer blocks play.
+- Keep native pause-menu borders and actions visible in short windows. Add round-result borders and remove extra macOS styling around the header buttons and version badge.
 
 ## v0.9.4
 

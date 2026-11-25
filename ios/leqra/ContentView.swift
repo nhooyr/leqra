@@ -266,7 +266,12 @@ struct ContentView: View {
                 .font(.system(size: 28, weight: .black)).foregroundStyle(winnerColor)
                 Text("NEW MAZE IN \(Int(ceil(session.snapshot.phaseTime)))").font(WebStyle.mono())
                     .foregroundStyle(WebStyle.soft)
-            }.padding(18).background(WebStyle.surface.opacity(0.95), in: RoundedRectangle(cornerRadius: 6))
+            }.padding(18).background(WebStyle.surface, in: RoundedRectangle(cornerRadius: 6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6).stroke(WebStyle.edge, lineWidth: 1)
+                        .allowsHitTesting(false)
+                )
+                .accessibilityIdentifier("roundResultCard")
                 .frame(maxWidth: .infinity, maxHeight: .infinity).allowsHitTesting(false)
         }
     }

@@ -249,6 +249,32 @@ final class MacCatalystUITests: XCTestCase {
     }
 
     @MainActor
+    func testPauseCardKeepsItsBorderAndActionsInsideAShortWindow() {
+        let app = launch(probe: true, fixed: true)
+        defer { app.terminate() }
+        let window = app.windows.firstMatch
+        let before = window.frame
+        let corner = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 1))
+            .withOffset(CGVector(dx: -2, dy: -2))
+        corner.click(
+            forDuration: 0.15,
+            thenDragTo: corner.withOffset(CGVector(dx: 780 - before.width, dy: 480 - before.height)))
+        waitUntil("The native window reaches its compact height") { window.frame.height < 540 }
+        let pause = app.buttons["pauseGame"]
+        XCTAssertEqual(pause.frame.width, 36, accuracy: 1)
+        XCTAssertEqual(pause.frame.height, 36, accuracy: 1)
+        pause.click()
+        let card = app.descendants(matching: .any)["pauseMenuCard"].firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        XCTAssertTrue(window.frame.contains(card.frame), "The entire bordered card stays in the window")
+        let leave = app.buttons["Leave game"]
+        if !leave.isHittable { reveal(leave, in: app) }
+        XCTAssertTrue(leave.isHittable)
+        XCTAssertGreaterThanOrEqual(card.frame.maxY - leave.frame.maxY, 20)
+        capture(app, name: "Mac compact pause card")
+    }
+
+    @MainActor
     private func launch(probe: Bool = false, fixed: Bool = false, arguments: [String] = []) -> XCUIApplication
     {
         let app = XCUIApplication()
