@@ -32,6 +32,9 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 
+internal const val SYSTEM_ANR_TITLE_PATTERN =
+    "^(?:System UI|Quickstep|Launcher|Launcher3) isn['’]t responding$"
+
 @RunWith(AndroidJUnit4::class)
 class MainActivityTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -97,17 +100,17 @@ class MainActivityTest {
                 }
             )
                 return
-            // Cold CI emulators can leave System UI's ANR dialog above the app.
-            // Only dismiss that system dialog; an ANR in leqra must still fail.
+            // Cold CI emulators can leave System UI or the launcher unresponsive.
+            // Only dismiss those system ANRs; an ANR in leqra must still fail.
             val close = device.findObject(UiSelector().resourceId("android:id/aerr_close"))
-            val systemUiError =
+            val systemError =
                 device.findObject(
                     UiSelector()
                         .packageName("android")
                         .resourceId("android:id/alertTitle")
-                        .textContains("System UI"),
+                        .textMatches(SYSTEM_ANR_TITLE_PATTERN),
                 )
-            if (close.exists() && systemUiError.exists()) {
+            if (close.exists() && systemError.exists()) {
                 close.click()
             }
             device.executeShellCommand("cmd statusbar collapse")

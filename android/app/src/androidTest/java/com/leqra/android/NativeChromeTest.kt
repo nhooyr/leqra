@@ -19,7 +19,27 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class NativeChromeTest {
-    private val instrumentation = InstrumentationRegistry.getInstrumentation()
+    private val instrumentation
+        get() = InstrumentationRegistry.getInstrumentation()
+
+    @Test
+    fun systemAnrRecoveryNeverDismissesTheGameDialog() {
+        val title = Regex(SYSTEM_ANR_TITLE_PATTERN)
+        for (name in listOf("System UI", "Quickstep", "Launcher", "Launcher3")) {
+            assertTrue(title.matches("$name isn't responding"))
+            assertTrue(title.matches("$name isn’t responding"))
+        }
+        for (other in
+            listOf(
+                "leqra isn't responding",
+                "leqra isn’t responding",
+                "Other app isn't responding",
+                "Quickstep keeps stopping",
+                "leqra System UI isn't responding",
+            )) {
+            assertFalse(other, title.matches(other))
+        }
+    }
 
     @Test
     fun compactHeaderVersionBadgeCombinesTheGitHubMarkAndReleaseNumber() {
