@@ -62,6 +62,8 @@ final class GameScene: SKScene {
     private var showsTouchControls = true
     private var frozenShowcase: ShowcaseScene?
     private var tankScreenPositions: [Int: CGPoint] = [:]
+    private var mousePointer: CGPoint?
+    private weak var mouseTarget: GameScene?
     private var secondaryPilotID: Int?
     var onFireChanged: ((Bool) -> Void)?
     var onControlsReset: (() -> Void)?
@@ -78,7 +80,7 @@ final class GameScene: SKScene {
     }
     var directAimProbePoint: CGPoint? { aimTankPosition.map { CGPoint(x: $0.x, y: size.height - $0.y) } }
     var controlLabelProbe: String {
-        "controlLabels=\(controls.children.filter { $0 is SKLabelNode }.count),stickBottom=\(stickOrigin.y - 51 - stickKnob.lineWidth / 2),fireBottom=\(fireOrigin.y - 53.5 - fireTrackRing.lineWidth / 2),controlCenterY=\(fireOrigin.y),fireX=\(fireOrigin.x),fireY=\(fireOrigin.y),driveX=\(stickOrigin.x),driveY=\(stickOrigin.y),crosshairX=\(fireCrosshair.position.x),crosshairY=\(-fireCrosshair.position.y)"
+        "viewWidth=\(size.width),viewHeight=\(size.height),touchControls=\(showsTouchControls ? 1 : 0),controlLabels=\(controls.children.filter { $0 is SKLabelNode }.count),stickBottom=\(stickOrigin.y - 51 - stickKnob.lineWidth / 2),fireBottom=\(fireOrigin.y - 53.5 - fireTrackRing.lineWidth / 2),controlCenterY=\(fireOrigin.y),fireX=\(fireOrigin.x),fireY=\(fireOrigin.y),driveX=\(stickOrigin.x),driveY=\(stickOrigin.y),crosshairX=\(fireCrosshair.position.x),crosshairY=\(-fireCrosshair.position.y)"
     }
     private let emptyFireProbe = ProcessInfo.processInfo.arguments.contains("--probe-empty-fire-feedback")
     private(set) var layoutMode: LayoutMode = .infinity
@@ -487,6 +489,7 @@ final class GameScene: SKScene {
     }
 
     func resetControls() {
+        clearMouseAim()
         onControlsReset?()
         aimTouch = nil
         stickTouch = nil
@@ -528,8 +531,13 @@ final class GameScene: SKScene {
         publishInput()
     }
     func clearMouseAim() {
-        inputSources.mouseAim = nil
-        publishInput()
+        let target = mouseTarget ?? self
+        mousePointer = nil
+        mouseTarget = nil
+        if target.inputSources.mouseAim != nil {
+            target.inputSources.mouseAim = nil
+            target.publishInput()
+        }
     }
 
     /// Pointer coordinates belong to the view under the pointer. In Infinity,
@@ -539,17 +547,38 @@ final class GameScene: SKScene {
             layoutMode == .fixed || target === self
         else { return false }
         let id = target === self ? currentLocalID : secondaryPilotID
-        guard let id, let tank = tankScreenPositions[id] else { return false }
-        let dx = Double(point.x - tank.x)
-        let dy = Double(tank.y - point.y)
-        let distance = hypot(dx, dy)
+        guard let id, tankScreenPositions[id] != nil else { return false }
         if !NativeInputSettings.shared.mouseAim {
-            target.clearMouseAim()
-        } else if distance >= 2 {
-            target.inputSources.mouseAim = BeamPoint(x: dx / distance, y: dy / distance)
-            target.publishInput()
+            clearMouseAim()
+        } else {
+            if mouseTarget !== target { clearMouseAim() }
+            mousePointer = convertPoint(toView: point)
+            mouseTarget = target
+            refreshMouseAim()
         }
         return true
+    }
+
+    private func refreshMouseAim() {
+        guard let mousePointer, let target = mouseTarget else { return }
+        let point = convertPoint(fromView: mousePointer)
+        guard NativeInputSettings.shared.mouseAim, worldViewport.contains(point), !spectating,
+            frozenShowcase == nil, target.frozenShowcase == nil
+        else {
+            clearMouseAim()
+            return
+        }
+        let id = target === self ? currentLocalID : secondaryPilotID
+        let aim = id.flatMap { tankScreenPositions[$0] }.flatMap { tank -> BeamPoint? in
+            let dx = Double(point.x - tank.x)
+            let dy = Double(tank.y - point.y)
+            let distance = hypot(dx, dy)
+            return distance >= 2 ? BeamPoint(x: dx / distance, y: dy / distance) : nil
+        }
+        if target.inputSources.mouseAim != aim {
+            target.inputSources.mouseAim = aim
+            target.publishInput()
+        }
     }
 
     func resetWorld() {
@@ -716,6 +745,7 @@ final class GameScene: SKScene {
             uniqueKeysWithValues: snapshot.tanks.filter { $0.hp > 0 }.map {
                 ($0.id, CGPoint(x: world.position.x + $0.x * zoom, y: world.position.y - $0.y * zoom))
             })
+        refreshMouseAim()
         renderGeometry = maze ?? fixedGeometry
         let visible = visibleWorldBounds
         updateMap(maze: maze, fixedWalls: fixedWalls, visible: visible)

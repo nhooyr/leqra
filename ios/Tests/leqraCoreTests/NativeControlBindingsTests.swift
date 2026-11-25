@@ -4,6 +4,21 @@ import XCTest
 @testable import leqraCore
 
 final class NativeControlBindingsTests: XCTestCase {
+    func testDesktopLayoutsDriveSeparatePilotsWhileSoloRetainsBothAliases() throws {
+        let bindings = try NativeControlBindings.defaults.assigning(8, layout: 0, action: .forward)
+        let keys: Set<Int> = [8, 79, 44]
+        let primary = bindings.input(pressed: keys, layout: 0)
+        let secondary = bindings.input(pressed: keys, layout: 1)
+        XCTAssertTrue(primary.forward)
+        XCTAssertFalse(primary.right)
+        XCTAssertFalse(primary.fire)
+        XCTAssertFalse(secondary.forward)
+        XCTAssertTrue(secondary.right)
+        XCTAssertTrue(secondary.fire)
+        let solo = bindings.input(pressed: keys)
+        XCTAssertTrue(solo.forward && solo.right && solo.fire)
+        XCTAssertEqual(bindings.input(pressed: keys, layout: 2), GameInput())
+    }
     func testBothLayoutsRouteToTheOneSelectedHardwareSeat() throws {
         let defaults = NativeControlBindings.defaults
         XCTAssertTrue(defaults.isValid)

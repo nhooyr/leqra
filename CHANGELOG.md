@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.9.5 (Unreleased)
+
+- Add a macOS app built from the shared iOS codebase, with resizable windows, desktop keyboard and mouse controls, and Mac App Store archive support.
+
 ## v0.9.4
 
 - Add an admin action to randomize Public Infinity tank colors, including bots, while keeping the leader blue and updating connected clients and saved pilot colors.

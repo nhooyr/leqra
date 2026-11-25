@@ -23,6 +23,7 @@
 		500000000000000000000014 /* GameDialogs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500000000000000000000004 /* GameDialogs.swift */; };
 		600000000000000000000002 /* FrameProfiler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 600000000000000000000001 /* FrameProfiler.swift */; };
 		900000000000000000000002 /* PublicInfinitySessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 900000000000000000000001 /* PublicInfinitySessionStore.swift */; };
+		A00000000000000000000003 /* MacCatalystUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000002 /* MacCatalystUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -53,6 +54,8 @@
 		500000000000000000000004 /* GameDialogs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameDialogs.swift; sourceTree = "<group>"; };
 		600000000000000000000001 /* FrameProfiler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameProfiler.swift; sourceTree = "<group>"; };
 		900000000000000000000001 /* PublicInfinitySessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicInfinitySessionStore.swift; sourceTree = "<group>"; };
+		A00000000000000000000001 /* leqra-mac.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "leqra-mac.entitlements"; sourceTree = "<group>"; };
+		A00000000000000000000002 /* MacCatalystUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacCatalystUITests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -102,6 +105,7 @@
 				00000000000000000000001F /* GameAudio.swift */,
 				600000000000000000000001 /* FrameProfiler.swift */,
 				900000000000000000000001 /* PublicInfinitySessionStore.swift */,
+				A00000000000000000000001 /* leqra-mac.entitlements */,
 				00000000000000000000000A /* GameApp.swift */,
 				00000000000000000000000B /* GameSession.swift */,
 				00000000000000000000000C /* ContentView.swift */,
@@ -117,6 +121,7 @@
 			isa = PBXGroup;
 			children = (
 				400000000000000000000008 /* GameUITests.swift */,
+				A00000000000000000000002 /* MacCatalystUITests.swift */,
 			);
 			path = leqraUITests;
 			sourceTree = "<group>";
@@ -255,6 +260,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				400000000000000000000009 /* GameUITests.swift in Sources */,
+				A00000000000000000000003 /* MacCatalystUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -299,9 +305,12 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "leqra/leqra-mac.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				DEVELOPMENT_TEAM = 7WUF7WB9JD;
+				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "$(DERIVED_FILE_DIR)/leqra-Info.plist";
@@ -311,9 +320,12 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.leqra;
 				PRODUCT_NAME = leqra;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				"TARGETED_DEVICE_FAMILY[sdk=macosx*]" = 6;
 			};
 			name = Debug;
 		};
@@ -321,9 +333,12 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "leqra/leqra-mac.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				DEVELOPMENT_TEAM = 7WUF7WB9JD;
+				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "$(DERIVED_FILE_DIR)/leqra-Info.plist";
@@ -333,9 +348,12 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.leqra;
 				PRODUCT_NAME = leqra;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				"TARGETED_DEVICE_FAMILY[sdk=macosx*]" = 6;
 			};
 			name = Release;
 		};
@@ -343,12 +361,20 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				DEVELOPMENT_TEAM = 7WUF7WB9JD;
+				"EXCLUDED_SOURCE_FILE_NAMES[sdk=iphone*]" = MacCatalystUITests.swift;
+				"EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]" = GameUITests.swift;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.leqra.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				"TARGETED_DEVICE_FAMILY[sdk=macosx*]" = 6;
 				TEST_TARGET_NAME = leqra;
 			};
 			name = Debug;
@@ -357,12 +383,20 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				DEVELOPMENT_TEAM = 7WUF7WB9JD;
+				"EXCLUDED_SOURCE_FILE_NAMES[sdk=iphone*]" = MacCatalystUITests.swift;
+				"EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]" = GameUITests.swift;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.leqra.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				"TARGETED_DEVICE_FAMILY[sdk=macosx*]" = 6;
 				TEST_TARGET_NAME = leqra;
 			};
 			name = Release;

@@ -80,7 +80,7 @@ struct ContentView: View {
                     NativeGameView(
                         scene: session.showcaseScene, highFrameRate: session.highFrameRate,
                         paused: false, infinity: true, landscape: landscape,
-                        showsTouchControls: true
+                        showsTouchControls: !NativePlatform.isDesktop
                     )
                     .accessibilityIdentifier("showcaseStage")
                     PilotLoadoutView(session: session, compact: landscape, showcase: frame)
@@ -126,8 +126,9 @@ struct ContentView: View {
     private func game(landscape: Bool) -> some View {
         let split = session.isInfinity && session.secondaryLocalID != nil
         let canControl = !session.spectating || session.secondaryLocalID != nil
+        let desktopPair = NativePlatform.isDesktop && !session.spectating && session.secondaryLocalID != nil
         let overlayHeight: CGFloat =
-            !session.isInfinity && !landscape && !session.spectating ? 119 : 0
+            !NativePlatform.isDesktop && !session.isInfinity && !landscape && !session.spectating ? 119 : 0
         return VStack(spacing: 0) {
             ArenaStatusBar(session: session)
             if let objective = session.snapshot.objectives,
@@ -160,9 +161,13 @@ struct ContentView: View {
                         paused: session.paused || session.hasModal,
                         infinity: session.isInfinity, landscape: landscape,
                         spectating: !canControl,
-                        hardwareInputScene: session.secondaryLocalID == nil
+                        hardwareInputScene: desktopPair || session.secondaryLocalID == nil
                             ? session.scene : session.secondaryScene,
-                        showsTouchControls: !session.spectating, renderingSuspended: session.showQuickTour
+                        secondaryHardwareInputScene: desktopPair ? session.secondaryScene : nil,
+                        showsTouchControls: !NativePlatform.isDesktop && !session.spectating,
+                        mouseTargetScene: NativePlatform.isDesktop && !session.spectating
+                            ? session.scene : nil,
+                        renderingSuspended: session.showQuickTour
                     )
                     .accessibilityIdentifier("arenaStage")
                 }
@@ -194,13 +199,17 @@ struct ContentView: View {
     }
 
     private func splitArena(seat: Int, landscape: Bool) -> some View {
-        VStack(spacing: 0) {
+        let desktopPair = NativePlatform.isDesktop && !session.spectating
+        return VStack(spacing: 0) {
             NativeGameView(
                 scene: seat == 0 ? session.scene : session.secondaryScene,
                 highFrameRate: session.highFrameRate, paused: session.paused || session.hasModal,
-                infinity: true, landscape: landscape, hardwareInputScene: session.secondaryScene,
-                acceptsHardware: seat == 0, showsTouchControls: seat == 0,
-                mouseTargetScene: session.secondaryScene,
+                infinity: true, landscape: landscape,
+                hardwareInputScene: desktopPair ? session.scene : session.secondaryScene,
+                secondaryHardwareInputScene: desktopPair ? session.secondaryScene : nil,
+                acceptsHardware: seat == 0, showsTouchControls: !NativePlatform.isDesktop && seat == 0,
+                mouseTargetScene: NativePlatform.isDesktop && seat == 0
+                    ? session.scene : session.secondaryScene,
                 renderingSuspended: session.showQuickTour
             )
             .accessibilityIdentifier(seat == 0 ? "arenaStage" : "secondaryArenaStage")

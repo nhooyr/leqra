@@ -273,6 +273,10 @@ final class GameSession: ObservableObject {
         gamepads.gameplayInputAllowed = { [weak self] in self?.gamepadTargets.enabled == true }
         gamepads.onMenu = { [weak self] in self?.toggleGamepadPause() }
         scene.onFrame = { [weak self] dt in self?.frame(dt) }
+        #if targetEnvironment(macCatalyst)
+            scene.onEscape = { [weak self] in self?.handleDesktopEscape() }
+            secondaryScene.onEscape = { [weak self] in self?.handleDesktopEscape() }
+        #endif
         scene.onFireChanged = { [weak self] down in self?.fireInputChanged(down) }
         scene.onControlsReset = { [weak self] in
             guard let self else { return }
@@ -2391,6 +2395,64 @@ final class GameSession: ObservableObject {
         else { return }
         setPaused(!paused)
     }
+
+    #if targetEnvironment(macCatalyst)
+        private var desktopTextEntryActive: Bool {
+            func editing(_ view: UIView) -> Bool {
+                if view.isFirstResponder,
+                    view is UITextField || view is UITextView
+                        || view is NativeKeyCaptureView.KeyCaptureResponder
+                {
+                    return true
+                }
+                return view.subviews.contains(where: editing)
+            }
+            return UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+                .flatMap(\.windows).contains(where: editing)
+        }
+
+        func toggleDesktopPause() {
+            guard !desktopTextEntryActive else { return }
+            toggleGamepadPause()
+        }
+
+        func toggleDesktopSound() {
+            guard !desktopTextEntryActive else { return }
+            soundEnabled.toggle()
+            applyAudioSetting(preview: .unmute)
+        }
+
+        func openDesktopControls() {
+            if screen == .playing, !paused { setPaused(true) }
+            showControls = true
+        }
+
+        func handleDesktopEscape() {
+            if showShowcase {
+                dismissShowcase()
+            } else if showQuickTour {
+                showQuickTour = false
+            } else if showAccount {
+                showAccount = false
+            } else if showControls {
+                showControls = false
+            } else if showRules {
+                showRules = false
+            } else if showJoin {
+                showJoin = false
+            } else if showPresets {
+                showPresets = false
+            } else if showQueues {
+                showQueues = false
+            } else if showSidebar {
+                showSidebar = false
+            } else if showScores {
+                showScores = false
+            } else {
+                toggleGamepadPause()
+            }
+        }
+    #endif
 
     func setSoundVolume(_ value: Double) {
         let level = value.isFinite ? min(100, max(0, value.rounded())) : 0

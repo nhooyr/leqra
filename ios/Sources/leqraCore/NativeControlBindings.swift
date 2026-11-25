@@ -59,7 +59,7 @@ public enum NativeBindingError: LocalizedError, Equatable {
 }
 
 /// Physical USB HID codes match UIKey.keyCode and do not change with keyboard
-/// language. Both layouts control P1 alone, or hardware P2 when explicitly added.
+/// language. Both layouts can share a pilot, or be assigned to separate desktop pilots.
 public struct NativeControlBindings: Codable, Equatable, Sendable {
     public var layouts: [NativeKeyboardLayout]
     public init(layouts: [NativeKeyboardLayout]) { self.layouts = layouts }
@@ -105,8 +105,11 @@ public struct NativeControlBindings: Codable, Equatable, Sendable {
     public func contains(_ code: Int) -> Bool {
         layouts.contains { layout in NativeControlAction.allCases.contains { layout[$0] == code } }
     }
-    public func input(pressed: Set<Int>) -> GameInput {
-        func held(_ action: NativeControlAction) -> Bool { layouts.contains { pressed.contains($0[action]) } }
+    public func input(pressed: Set<Int>, layout index: Int? = nil) -> GameInput {
+        let selected = index.map { layouts.indices.contains($0) ? [layouts[$0]] : [] } ?? layouts
+        func held(_ action: NativeControlAction) -> Bool {
+            selected.contains { pressed.contains($0[action]) }
+        }
         return GameInput(
             forward: held(.forward), reverse: held(.reverse), left: held(.left), right: held(.right),
             fire: held(.fire) || held(.fireAlt))

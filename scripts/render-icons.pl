@@ -64,7 +64,9 @@ render( $source,        "$output/favicon-256.png",          256 );
 render( $opaque_source, "$output/apple-touch-icon.png",     180 );
 render( $opaque_source, "$output/apple-touch-icon-512.png", 512 );
 unless ( defined $output_dir ) {
-    render( $opaque_source, "$root/ios/leqra/Assets.xcassets/AppIcon.appiconset/AppIcon.png", 1024, 1 );
+    render( $opaque_source, "$root/ios/leqra/Assets.xcassets/AppIcon.appiconset/AppIcon.png", 1024,      1 );
+    render( $opaque_source, "$root/ios/leqra/Assets.xcassets/AppIcon.appiconset/AppIcon-mac-$_.png", $_, 1 )
+      for ( 16, 32, 64, 128, 256, 512 );
     copy( "$output/icon-1024.png", "$root/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" )
       or die "copy Android icon: $!\n";
     for my $brand (
@@ -75,5 +77,5 @@ unless ( defined $output_dir ) {
         make_path( dirname($brand) );
         copy( "$output/icon-192.png", $brand ) or die "copy $brand: $!\n";
     }
-    print "Native iOS and Android icons synchronized\n";
+    print "Native iOS, macOS and Android icons synchronized\n";
 }

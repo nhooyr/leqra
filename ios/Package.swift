@@ -11,7 +11,8 @@ let package = Package(
         .target(
             name: "leqraAccountStore", dependencies: ["leqraCore"], path: "leqra",
             exclude: [
-                "Assets.xcassets", "Info.plist", "PrivacyInfo.xcprivacy", "ContentView.swift",
+                "Assets.xcassets", "Info.plist", "PrivacyInfo.xcprivacy", "leqra-mac.entitlements",
+                "ContentView.swift",
                 "FrameProfiler.swift",
                 "GameApp.swift", "GameAudio.swift", "GameChrome.swift", "GameDialogs.swift",
                 "GameScene.swift",

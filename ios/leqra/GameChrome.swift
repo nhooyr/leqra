@@ -50,10 +50,12 @@ struct GameHeader: View {
                 session.soundEnabled.toggle()
                 session.applyAudioSetting(preview: .unmute)
             }
-            WebIconButton(
-                symbol: "viewfinder", label: session.fullscreen ? "Exit fullscreen" : "Enter fullscreen",
-                active: session.fullscreen
-            ) { if !showcase { session.fullscreen.toggle() } }
+            if !NativePlatform.isDesktop {
+                WebIconButton(
+                    symbol: "viewfinder", label: session.fullscreen ? "Exit fullscreen" : "Enter fullscreen",
+                    active: session.fullscreen
+                ) { if !showcase { session.fullscreen.toggle() } }
+            }
             if !showcase && (session.readyRoom || session.screen == .playing) {
                 WebIconButton(symbol: "rectangle.rightthird.inset.filled", label: "Open sidebar") {
                     session.showSidebar = true

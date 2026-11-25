@@ -39,6 +39,9 @@ sub fixture {
         "$tmp/ios/leqra/Assets.xcassets/BrandIcon.imageset/brand-icon.png",
         "$tmp/android/app/src/main/res/drawable-nodpi/brand_icon.png"
     );
+    push @native,
+      map { "$tmp/ios/leqra/Assets.xcassets/AppIcon.appiconset/AppIcon-mac-$_.png" }
+      ( 16, 32, 64, 128, 256, 512 );
     write_text( $_, 'original native icon' ) for @native;
     write_text( "$tmp/commands/inkscape", <<'PERL', 0755 );
 #!/usr/bin/perl
@@ -73,7 +76,7 @@ subtest 'preview preserves native icons and transparent artwork' => sub {
           : is( $export->{svg}, $source, 'transparent artwork unchanged' );
     }
 };
-subtest 'default synchronizes RGB iOS and transparent Android/header artwork' => sub {
+subtest 'default synchronizes RGB Apple and transparent Android/header artwork' => sub {
     my ( $tmp, $assets, $native ) = fixture();
     my %env = (
         %ENV,
@@ -87,11 +90,19 @@ subtest 'default synchronizes RGB iOS and transparent Android/header artwork' =>
     );
     is( $r->{code}, 0, $r->{err} );
     my $exports = json_lines("$tmp/exports.jsonl");
-    is( scalar @$exports, 7, 'seven renders' );
+    is( scalar @$exports, 13, 'thirteen renders' );
     my ($ios) = grep { $_->{output} eq $native->[0] } @$exports;
     ok( grep( $_ eq '--export-png-color-mode=RGB_8', @{ $ios->{args} } ), 'RGB iOS' );
     ok( grep( $_ eq '--export-width=1024',           @{ $ios->{args} } ), '1024 iOS' );
     opaque( $ios->{svg} );
+
+    for my $size ( 16, 32, 64, 128, 256, 512 ) {
+        my ($mac) = grep { $_->{output} =~ m{/AppIcon-mac-$size\.png$} } @$exports;
+        ok( $mac, "macOS $size icon rendered" );
+        ok( grep( $_ eq '--export-png-color-mode=RGB_8', @{ $mac->{args} } ), 'RGB macOS icon' );
+        ok( grep( $_ eq "--export-width=$size",          @{ $mac->{args} } ), 'correct pixel size' );
+        opaque( $mac->{svg} );
+    }
     is( read_bytes( $native->[1] ), read_bytes("$assets/icon-1024.png"), 'Android uses transparent 1024' );
     is( read_bytes($_),             read_bytes("$assets/icon-192.png"),  'brand uses transparent 192' )
       for @$native[ 2, 3 ];

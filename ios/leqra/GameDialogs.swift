@@ -669,12 +669,18 @@ struct ControlsPanel: View {
                 VStack(alignment: .leading, spacing: 16) {
                     Text(session.identity).font(.system(size: 13, weight: .bold)).foregroundStyle(
                         WebStyle.paint(session.colorIndex))
-                    if session.hasLocalP2 {
-                        Text("Touch controls P1.").font(.system(size: 12)).foregroundStyle(WebStyle.soft)
+                    if !NativePlatform.isDesktop {
+                        if session.hasLocalP2 {
+                            Text("Touch controls P1.").font(.system(size: 12)).foregroundStyle(WebStyle.soft)
+                        }
+                        Text(
+                            "Drag the left stick to drive and aim. Touch near your tank to rotate exactly toward that point without moving. Tap Fire to shoot, or hold it to fire continuously. Press off-center or drag Fire to aim while firing, even while driving with the joystick. Pickups equip automatically."
+                        ).font(.system(size: 13)).lineSpacing(5)
+                    } else {
+                        Text(
+                            "Use the keyboard to drive and fire. Move the pointer to aim, and click or hold the primary mouse button to fire. Pickups equip automatically."
+                        ).font(.system(size: 13)).lineSpacing(5)
                     }
-                    Text(
-                        "Drag the left stick to drive and aim. Touch near your tank to rotate exactly toward that point without moving. Tap Fire to shoot, or hold it to fire continuously. Press off-center or drag Fire to aim while firing, even while driving with the joystick. Pickups equip automatically."
-                    ).font(.system(size: 13)).lineSpacing(5)
                     HardwareControlsPanel(
                         session: session, keyboardConnected: keyboardConnected, mouseConnected: mouseConnected
                     ) { layout, action in
@@ -755,16 +761,33 @@ private struct QuickTourPanel: View {
     let gamepads: NativeGamepads
     let close: () -> Void
     @Environment(\.scenePhase) private var scenePhase
+    @ObservedObject private var inputSettings = NativeInputSettings.shared
     @StateObject private var practice: QuickTourPractice
     @State private var page = 0
-    private static let lessons: [(title: String, instruction: String)] = [
-        ("Drive and aim", "Drag the left stick to drive. Touch near your tank to aim without moving."),
-        (
-            "Fire",
-            "Tap Fire to shoot, or hold it to fire continuously. Press off-center or drag Fire to aim while firing, even while driving with the joystick."
-        ),
-        ("Score a point", "Destroy the stationary tank to score a point."),
-    ]
+    private var lessons: [(title: String, instruction: String)] {
+        if NativePlatform.isDesktop {
+            let layouts = inputSettings.bindings.layouts
+            let drive = layouts.map { layout in
+                [layout.forward, layout.reverse, layout.left, layout.right]
+                    .map(NativeControlBindings.keyLabel).joined(separator: "/")
+            }.joined(separator: " or ")
+            let fire = layouts.flatMap { [$0.fire, $0.fireAlt] }
+                .map(NativeControlBindings.keyLabel).joined(separator: "/")
+            return [
+                ("Drive and aim", "Use \(drive) to drive. Move the pointer to aim without moving."),
+                ("Fire", "Press \(fire) to fire, or click and hold the primary mouse button."),
+                ("Score a point", "Destroy the stationary tank to score a point."),
+            ]
+        }
+        return [
+            ("Drive and aim", "Drag the left stick to drive. Touch near your tank to aim without moving."),
+            (
+                "Fire",
+                "Tap Fire to shoot, or hold it to fire continuously. Press off-center or drag Fire to aim while firing, even while driving with the joystick."
+            ),
+            ("Score a point", "Destroy the stationary tank to score a point."),
+        ]
+    }
 
     init(
         highFrameRate: Bool, gamepads: NativeGamepads, playSound: @escaping (AudioCue) -> Void,
@@ -800,7 +823,10 @@ private struct QuickTourPanel: View {
                 }
             }
         }
-        .onAppear { if scenePhase == .active { gamepads.setPractice(practice.scene) } }
+        .onAppear {
+            practice.scene.onEscape = close
+            if scenePhase == .active { gamepads.setPractice(practice.scene) }
+        }
         .onChange(of: scenePhase) { phase in
             if phase != .active { practice.scene.resetControls() }
             gamepads.setPractice(phase == .active ? practice.scene : nil)
@@ -809,13 +835,14 @@ private struct QuickTourPanel: View {
         .onDisappear {
             gamepads.setPractice(nil)
             practice.scene.resetControls()
+            practice.scene.onEscape = nil
         }
     }
 
     private var instructions: some View {
         // Reserve the tallest lesson at the current width.
         ZStack(alignment: .topLeading) {
-            ForEach(Self.lessons.indices, id: \.self) { index in
+            ForEach(lessons.indices, id: \.self) { index in
                 if index == page {
                     lesson(index, accessible: true)
                 } else {
@@ -827,8 +854,8 @@ private struct QuickTourPanel: View {
 
     private func lesson(_ index: Int, accessible: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(Self.lessons[index].title).font(.system(size: 20, weight: .bold))
-            Text(Self.lessons[index].instruction).font(.system(size: 14)).fixedSize(
+            Text(lessons[index].title).font(.system(size: 20, weight: .bold))
+            Text(lessons[index].instruction).font(.system(size: 14)).fixedSize(
                 horizontal: false, vertical: true
             )
             .accessibilityIdentifier(accessible ? "tourInstructions" : "")
@@ -845,13 +872,23 @@ private struct QuickTourPanel: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity).background(WebStyle.surface)
                 }
             }
-            SpriteView(
-                scene: practice.scene, isPaused: scenePhase != .active,
-                preferredFramesPerSecond: min(highFrameRate ? 120 : 60, UIScreen.main.maximumFramesPerSecond),
-                options: [.ignoresSiblingOrder, .shouldCullNonVisibleNodes]
-            )
-            .accessibilityElement(children: .ignore).accessibilityLabel("Practice arena")
-            .accessibilityIdentifier("tourPracticeArena")
+            if NativePlatform.isDesktop {
+                NativeGameView(
+                    scene: practice.scene, highFrameRate: highFrameRate, paused: scenePhase != .active,
+                    infinity: false, landscape: true, showsTouchControls: false,
+                    renderingSuspended: scenePhase != .active
+                )
+                .accessibilityLabel("Practice arena").accessibilityIdentifier("tourPracticeArena")
+            } else {
+                SpriteView(
+                    scene: practice.scene, isPaused: scenePhase != .active,
+                    preferredFramesPerSecond: min(
+                        highFrameRate ? 120 : 60, UIScreen.main.maximumFramesPerSecond),
+                    options: [.ignoresSiblingOrder, .shouldCullNonVisibleNodes]
+                )
+                .accessibilityElement(children: .ignore).accessibilityLabel("Practice arena")
+                .accessibilityIdentifier("tourPracticeArena")
+            }
         }
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(
@@ -990,7 +1027,7 @@ private struct QuickTourPanel: View {
 struct HardwareControlsPanel: View {
     @ObservedObject var session: GameSession
     @ObservedObject private var settings = NativeInputSettings.shared
-    @State private var bindsOpen = false
+    @State private var bindsOpen = NativePlatform.isDesktop
     let keyboardConnected: Bool
     let mouseConnected: Bool
     var capture: (Int, NativeControlAction) -> Void
@@ -1000,11 +1037,28 @@ struct HardwareControlsPanel: View {
                 VStack(alignment: .leading, spacing: 12) {
                     let devices =
                         keyboardConnected ? (mouseConnected ? "KEYBOARD/MOUSE" : "KEYBOARD") : "MOUSE"
-                    Text(devices + ", " + (session.hasLocalP2 ? session.secondaryIdentity : session.identity))
+                    if NativePlatform.isDesktop {
+                        Text(devices).font(WebStyle.mono(11, weight: .bold)).foregroundStyle(WebStyle.soft)
+                        Text(session.identity).font(WebStyle.mono(11, weight: .bold)).foregroundStyle(
+                            WebStyle.paint(session.colorIndex))
+                        if session.hasLocalP2 {
+                            Text(session.secondaryIdentity).font(WebStyle.mono(11, weight: .bold))
+                                .foregroundStyle(WebStyle.paint(session.secondaryPaint))
+                            Text(
+                                "Keyboard layout 1 controls \(session.identity); layout 2 controls \(session.secondaryIdentity). Mouse aim and fire follow the arena under the pointer."
+                            )
+                            .font(.system(size: 12)).foregroundStyle(WebStyle.soft)
+                        }
+                    } else {
+                        Text(
+                            devices + ", "
+                                + (session.hasLocalP2 ? session.secondaryIdentity : session.identity)
+                        )
                         .font(WebStyle.mono(11, weight: .bold)).fixedSize(horizontal: false, vertical: true)
                         .foregroundStyle(
                             WebStyle.paint(session.hasLocalP2 ? session.secondaryPaint : session.colorIndex))
-                    if !session.hasLocalP2 {
+                    }
+                    if !NativePlatform.isDesktop && !session.hasLocalP2 {
                         Text("Add local P2 in Players and bots to assign them these controls.")
                             .font(.system(size: 12)).foregroundStyle(WebStyle.soft)
                     }
@@ -1126,14 +1180,24 @@ struct FieldManualContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("FIELD MANUAL").font(WebStyle.mono()).foregroundStyle(WebStyle.accent)
-            Text("Touch").font(.system(size: 13, weight: .semibold))
-            Text(
-                "Drag the joystick to drive and aim. Touch near the tank to aim in place. Tap Fire to shoot, or hold it to fire continuously. Press off-center or drag Fire to aim while firing, even while driving with the joystick."
-            ).font(.system(size: 12)).foregroundStyle(WebStyle.soft)
+            if NativePlatform.isDesktop {
+                Text("Keyboard and mouse").font(.system(size: 13, weight: .semibold))
+                Text(
+                    "Use the drive and Fire keys shown in Controls. Move the pointer to aim and click or hold the primary mouse button to fire. With two pilots, keyboard layout 1 controls \(session.identity), and layout 2 controls \(session.secondaryIdentity)."
+                ).font(.system(size: 12)).foregroundStyle(WebStyle.soft)
+            } else {
+                Text("Touch").font(.system(size: 13, weight: .semibold))
+                Text(
+                    "Drag the joystick to drive and aim. Touch near the tank to aim in place. Tap Fire to shoot, or hold it to fire continuously. Press off-center or drag Fire to aim while firing, even while driving with the joystick."
+                ).font(.system(size: 12)).foregroundStyle(WebStyle.soft)
+            }
             if includeSidebarControls {
-                Text("Connect a game controller to play.")
-                    .font(.system(size: 12)).foregroundStyle(WebStyle.soft).accessibilityIdentifier(
-                        "manualGamepadHint")
+                Text(
+                    NativePlatform.isDesktop
+                        ? "Game controllers are optional." : "Connect a game controller to play."
+                )
+                .font(.system(size: 12)).foregroundStyle(WebStyle.soft).accessibilityIdentifier(
+                    "manualGamepadHint")
             }
             Text(infinity ? "INFINITY" : session.selectedMode.title.uppercased()).font(WebStyle.mono())
                 .foregroundStyle(WebStyle.accent)
