@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	version = "v0.9.4"
+	version = "v0.10.0-dev"
 	// Advance the protocol epoch only when existing clients cannot use the wire contract.
 	protocolVersion = 1
 	maxRoomLimit    = 32768

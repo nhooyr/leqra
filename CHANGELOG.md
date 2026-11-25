@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.9.5 (Unreleased)
+## v0.10.0 (Unreleased)
 
 - Add a macOS app built from the shared iOS codebase, with resizable windows, desktop keyboard and mouse controls, and Mac App Store archive support.
 
