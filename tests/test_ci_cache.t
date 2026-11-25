@@ -193,9 +193,12 @@ PERL
         is( $r->{code}, 0,            $r->{err} );
         is( $r->{out},  "standard\n", 'standard runtime chosen' );
         is_deeply(
-            -e "$tmp/trace"      ? json_lines("$tmp/trace")             : [],
-            $state eq 'Shutdown' ? [ [ 'simctl', 'boot', 'standard' ] ] : [],
-            'boot only when shut down'
+            -e "$tmp/trace" ? json_lines("$tmp/trace") : [],
+            [
+                ( $state eq 'Shutdown' ? ( [ 'simctl', 'boot', 'standard' ] ) : () ),
+                [ 'simctl', 'bootstatus', 'standard', '-b' ]
+            ],
+            'boot only when shut down and wait for readiness in either state'
         );
     }
 };
