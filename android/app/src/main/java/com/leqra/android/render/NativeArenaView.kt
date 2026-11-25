@@ -628,12 +628,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         val width = width / density
         val height = height / density
         val landscape = width > height
-        viewport.set(
-            if (infinity) 0f else safe.left,
-            safe.top + hudHeightDp,
-            if (infinity) width else width - safe.right,
-            height - safe.bottom - if (!infinity && !landscape && controlsLayout) 119f else 0f,
-        )
+        viewport.set(0f, hudHeightDp, width, height)
         if (viewport.width() <= 0 || viewport.height() <= 0) {
             canvas.restore()
             return
@@ -647,8 +642,10 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             else primaryViewport.bottom = fullViewport.centerY()
         }
         // Virtual controls always belong to P1, including after rotating a paired arena.
-        if (paired) controlViewport.set(primaryViewport)
-        else controlViewport.set(0f, safe.top + hudHeightDp, width, height - safe.bottom)
+        if (paired) {
+            controlViewport.set(primaryViewport)
+            controlViewport.bottom = min(controlViewport.bottom, height - safe.bottom)
+        } else controlViewport.set(0f, safe.top + hudHeightDp, width, height - safe.bottom)
         val fixedPortrait = !infinity && !landscape
         stickX = max(controlViewport.left, safe.left) + if (fixedPortrait) 93f else 84f
         stickY = controlViewport.bottom - 63f
@@ -688,7 +685,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             }
             drawEncounterNotice(canvas)
         }
-        if (showControls) drawControls(canvas, width, height)
+        if (showControls) drawControls(canvas)
         canvas.restore()
         renderedFrames++
         lastRenderNanos = System.nanoTime() - start
@@ -1665,20 +1662,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         }
     }
 
-    private fun drawControls(canvas: Canvas, width: Float, height: Float) {
-        val fixedPortrait = !infinity && width < height
-        if (fixedPortrait) {
-            fill(0xff192127.toInt())
-            canvas.drawRect(0f, height - safe.bottom - 119f, width, height, paint)
-            stroke(0xff34434a.toInt(), 1f)
-            canvas.drawLine(
-                0f,
-                height - safe.bottom - 119,
-                width,
-                height - safe.bottom - 119,
-                paint,
-            )
-        }
+    private fun drawControls(canvas: Canvas) {
         paint.alpha = 255
         paint.style = Paint.Style.FILL
         destination.set(stickX - 48, stickY - 48, stickX + 48, stickY + 48)
@@ -1803,9 +1787,8 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                 val x = event.getX(index) / density
                 val y = event.getY(index) / density
                 val overlaidControl =
-                    !controlsLayout &&
-                        (hypot(x - stickX, y - stickY) <= 48f ||
-                            showFireControl && hypot(x - fireX, y - fireY) <= 56f)
+                    hypot(x - stickX, y - stickY) <= 48f ||
+                        showFireControl && hypot(x - fireX, y - fireY) <= 56f
                 if (aimPointer < 0 && !overlaidControl && aim(index, nearOnly = true)) {
                     aimPointer = pointer
                 } else if (

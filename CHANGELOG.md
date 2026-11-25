@@ -7,10 +7,10 @@
 - Fix Keychain access in local macOS builds so saving an account key no longer blocks play.
 - Keep native pause-menu borders and actions visible in short windows. Add round-result borders and remove extra macOS styling around the header buttons and version badge.
 - Aim the turret independently with the mouse while driving and turning with the keyboard on web, iOS, Android, and macOS.
-- Show arena status at the bottom on desktops and tablets, while phones keep it below the top header.
+- Combine arena status with the top header on tablets, keep it at the bottom on desktops, and below the top header on phones.
 - Fill the web start-menu maze preview to the bottom on desktop instead of reserving blank space for its hidden loadout.
 - Center fitting iOS and macOS start menus while keeping expanded menus scrollable, and use the blue iOS-style Public Infinity switch on macOS.
-- Extend phone gameplay mazes to the bottom edge with rounded corners, keep controls clear of the home indicator, and redraw framed start-menu previews after resizing.
+- Extend iOS and Android gameplay mazes to the bottom edge with rounded corners and touch controls clear of system navigation. Keep start-menu mazes framed and refresh their previews after resizing.
 
 ## v0.9.4
 

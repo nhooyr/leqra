@@ -7,6 +7,7 @@ import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.RippleDrawable
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -49,6 +50,8 @@ internal class NativeGameHeader(
             visibility = if (hasSidebar) VISIBLE else GONE
         }
     private val menuButton = iconButton(openMenu)
+    private val spacer = View(context)
+    private var combinedStatus = false
     private var soundMuted: Boolean? = null
     private var fullscreenActive: Boolean? = null
     private var inGame: Boolean? = null
@@ -84,12 +87,29 @@ internal class NativeGameHeader(
             width = -2,
             gap = 0,
         )
-        addView(View(context), LayoutParams(0, 0, 1f))
+        addView(spacer, LayoutParams(0, 0, 1f))
         add(roomButton, -2, 36, gap = 0)
         add(soundButton, 44, 44, gap = 0)
         add(fullscreenButton, 44, 44, gap = 0)
         add(sidebarButton, 44, 44, gap = 0)
         add(menuButton, 44, 44, gap = 0)
+    }
+
+    fun placeStatus(status: NativeStatusView, combined: Boolean) {
+        combinedStatus = combined
+        status.setBackgroundColor(
+            if (combined) android.graphics.Color.TRANSPARENT else NativeStyle.surface,
+        )
+        if (combined && status.parent !== this) {
+            (status.parent as? ViewGroup)?.removeView(status)
+            addView(status, indexOfChild(spacer), LayoutParams(0, -2, 1f))
+        } else if (!combined && status.parent === this) {
+            removeView(status)
+            (parent as? LinearLayout)?.let {
+                it.addView(status, it.indexOfChild(this) + 1, LayoutParams(-1, -2))
+            }
+        }
+        spacer.visibility = if (combined && status.visibility == VISIBLE) GONE else VISIBLE
     }
 
     fun display(
@@ -103,9 +123,12 @@ internal class NativeGameHeader(
     ) {
         val sidebarVisible = hasSidebar && showSidebar
         val compact =
-            widthDp < (if (sidebarVisible) 390 else 375) || (roomCode != null && widthDp < 500)
+            combinedStatus && widthDp < 960 ||
+                widthDp < (if (sidebarVisible) 390 else 375) ||
+                (roomCode != null && widthDp < 500)
         brandSubtitle.visibility =
-            if (landscape || (compact && sidebarVisible)) View.GONE else View.VISIBLE
+            if (combinedStatus || landscape || (compact && sidebarVisible)) View.GONE
+            else View.VISIBLE
         brandMark.visibility = if (compact) GONE else VISIBLE
         sidebarButton.visibility = if (sidebarVisible) VISIBLE else GONE
         val brandGap = context.dp(if (compact) 4 else 8)

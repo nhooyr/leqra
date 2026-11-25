@@ -151,6 +151,7 @@ function boot() {
     resize() {
       s.resizes = (s.resizes || 0) + 1
     },
+    syncArenaHeader() {},
     $: (id) => elements.get(id),
     MutationObserver: class {
       constructor(fn) {

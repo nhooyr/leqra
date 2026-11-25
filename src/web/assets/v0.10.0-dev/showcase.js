@@ -81,6 +81,7 @@
     const header = document.createElement("div")
     header.className = "infinite-header showcase-header"
     header.append(visualClone(document.getElementById("gameHeader")))
+    for (const bar of header.querySelectorAll(".arena-bar")) bar.remove()
     header.querySelector('[data-showcase-source="roomControlsBtn"]')?.remove()
     for (const id of ["roomBtn", "chatBtn"]) {
       const node = header.querySelector('[data-showcase-source="' + id + '"]')
@@ -140,7 +141,11 @@
       readout.append(hint)
       footer.append(readout)
     }
-    dialog.prepend(header, bar)
+    if (document.body.classList.contains("tablet-header")) {
+      const appHeader = header.querySelector(".header")
+      appHeader.insertBefore(bar, appHeader.querySelector(".header-right"))
+      dialog.prepend(header)
+    } else dialog.prepend(header, bar)
     dialog.append(footer)
     window.leqraInfinityArt.renderShowcaseLoadout(hero, prefix)
   }
@@ -153,7 +158,7 @@
         : window.leqraShowcaseScene.desktop
           ? "desktop"
           : "wide",
-      key = (mobile ? "mobile-" : "desktop-") + next
+      key = (mobile ? "mobile-" : "desktop-") + next + document.body.classList.contains("tablet-header")
     dialog.classList.toggle("showcase-mobile", mobile)
     if (key !== variant) {
       variant = key

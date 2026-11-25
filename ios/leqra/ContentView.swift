@@ -5,7 +5,22 @@ struct ContentView: View {
     @ObservedObject var session: GameSession
     @Environment(\.scenePhase) private var scenePhase
     private var statusAtBottom: Bool {
-        NativePlatform.isDesktop || UIDevice.current.userInterfaceIdiom == .pad
+        NativePlatform.isDesktop
+    }
+    private var statusInHeader: Bool {
+        !NativePlatform.isDesktop && UIDevice.current.userInterfaceIdiom == .pad
+    }
+    private var nativeLayoutProbeWidth: CGFloat? {
+        #if DEBUG
+            let arguments = ProcessInfo.processInfo.arguments
+            guard arguments.contains("--probe-native-layout"),
+                let index = arguments.firstIndex(of: "--probe-content-width"),
+                arguments.indices.contains(index + 1), let width = Double(arguments[index + 1]), width > 0
+            else { return nil }
+            return CGFloat(width)
+        #else
+            return nil
+        #endif
     }
     var body: some View {
         GeometryReader { geometry in
@@ -17,7 +32,8 @@ struct ContentView: View {
                 Group {
                     VStack(spacing: 0) {
                         GameHeader(
-                            session: session, landscape: landscape, availableWidth: geometry.size.width)
+                            session: session, landscape: landscape, availableWidth: geometry.size.width,
+                            embeddedStatus: statusInHeader, statusPreview: session.readyRoom)
                         if session.readyRoom {
                             readyRoom(landscape: landscape, bottomInset: bottomInset)
                         } else if session.screen == .connecting {
@@ -51,6 +67,7 @@ struct ContentView: View {
                 }
             }.foregroundStyle(WebStyle.text).tint(WebStyle.accent)
         }
+        .frame(maxWidth: nativeLayoutProbeWidth)
         .alert(
             "leqra",
             isPresented: Binding(get: { session.error != nil }, set: { if !$0 { session.error = nil } })
@@ -78,11 +95,14 @@ struct ContentView: View {
 
     private func showcase(landscape: Bool, width: CGFloat) -> some View {
         VStack(spacing: 0) {
-            GameHeader(session: session, landscape: landscape, availableWidth: width, showcase: true)
-                .allowsHitTesting(false)
+            GameHeader(
+                session: session, landscape: landscape, availableWidth: width, showcase: true,
+                embeddedStatus: statusInHeader
+            )
+            .allowsHitTesting(false)
             if let frame = session.showcaseFrame {
                 VStack(spacing: 0) {
-                    if !statusAtBottom {
+                    if !statusAtBottom && !statusInHeader {
                         ArenaStatusBar(session: session, showcase: frame).allowsHitTesting(false)
                     }
                     NativeGameView(
@@ -108,7 +128,7 @@ struct ContentView: View {
 
     private func readyRoom(landscape: Bool, bottomInset: CGFloat) -> some View {
         VStack(spacing: 0) {
-            if !statusAtBottom { ArenaStatusBar(session: session, preview: true) }
+            if !statusAtBottom && !statusInHeader { ArenaStatusBar(session: session, preview: true) }
             ZStack(alignment: .topTrailing) {
                 NativeGameView(
                     scene: session.scene, highFrameRate: false, paused: true, infinity: true,
@@ -145,7 +165,7 @@ struct ContentView: View {
         let overlayHeight: CGFloat =
             !NativePlatform.isDesktop && !session.isInfinity && !landscape && !session.spectating ? 119 : 0
         return VStack(spacing: 0) {
-            if !statusAtBottom { ArenaStatusBar(session: session) }
+            if !statusAtBottom && !statusInHeader { ArenaStatusBar(session: session) }
             if let objective = session.snapshot.objectives,
                 ["ctf", "koth", "survival"].contains(objective.mode)
             {

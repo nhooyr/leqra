@@ -755,12 +755,11 @@ class MainActivityTest {
                 assertEquals(10, shown.scene.snapshot.tanks.size)
                 assertEquals(4, shown.scene.snapshot.pickups.size)
                 assertTrue(shown.arena.showControls)
-                assertEquals(
+                assertSame(
                     "Showcase uses the same device-specific status placement",
-                    if (activity.resources.configuration.smallestScreenWidthDp >= 600)
-                        shown.childCount - 1
-                    else shown.indexOfChild(shown.header) + 1,
-                    shown.indexOfChild(shown.status),
+                    if (activity.resources.configuration.smallestScreenWidthDp >= 600) shown.header
+                    else shown,
+                    shown.status.parent,
                 )
                 val pauseButton =
                     (0 until shown.header.childCount).map(shown.header::getChildAt).single {
@@ -808,12 +807,11 @@ class MainActivityTest {
             SystemClock.sleep(100)
             main {
                 val shown = showcase()!!
-                assertEquals(
+                assertSame(
                     "Showcase keeps status placement after rotation",
-                    if (activity.resources.configuration.smallestScreenWidthDp >= 600)
-                        shown.childCount - 1
-                    else shown.indexOfChild(shown.header) + 1,
-                    shown.indexOfChild(shown.status),
+                    if (activity.resources.configuration.smallestScreenWidthDp >= 600) shown.header
+                    else shown,
+                    shown.status.parent,
                 )
             }
             screenshot("showcase-landscape")
@@ -2681,7 +2679,7 @@ class MainActivityTest {
     }
 
     @Test
-    fun arenaStatusUsesBottomOnTabletsAndTopOnPhones() {
+    fun immersiveArenaKeepsTabletHeaderCombinedAndPhoneStatusSeparate() {
         val activity = launch()
         try {
             val session = main { state(activity) }
@@ -2700,15 +2698,8 @@ class MainActivityTest {
                 assertEquals(1, descendants(root).count { it is NativeStatusView })
                 assertTrue("Arena status is visible", status.isShown && status.height > 0)
                 if (tablet) {
-                    assertTrue(
-                        "Tablet arena status sits below the arena",
-                        status.top >= stage.bottom,
-                    )
-                    assertEquals(
-                        "Tablet status is the bottom row",
-                        root.height - root.paddingBottom,
-                        status.bottom,
-                    )
+                    assertSame("Tablets combine status with the top header", header, status.parent)
+                    assertTrue(status.bottom <= header.height)
                 } else {
                     assertTrue(
                         "Phone arena status sits below the main header",
@@ -2716,9 +2707,106 @@ class MainActivityTest {
                     )
                     assertTrue("Phone status stays above the arena", status.bottom <= stage.top)
                 }
+                if (session.screen == Screen.READY) {
+                    val density = activity.resources.displayMetrics.density
+                    val inset = (9 * density + .5f).toInt()
+                    fun safe(name: String) =
+                        MainActivity::class.java.getDeclaredField(name).run {
+                            isAccessible = true
+                            getInt(activity)
+                        }
+                    val margins = stage.layoutParams as ViewGroup.MarginLayoutParams
+                    assertEquals(inset + safe("safeLeft"), margins.leftMargin)
+                    assertEquals(inset + safe("safeRight"), margins.rightMargin)
+                    assertEquals(inset, margins.topMargin)
+                    assertEquals(inset + safe("safeBottom"), margins.bottomMargin)
+                    assertEquals(
+                        root.height - root.paddingBottom,
+                        stage.bottom + margins.bottomMargin,
+                    )
+                    assertTrue("Ready preview has rounded corners", stage.clipToOutline)
+                    val outline = android.graphics.Outline()
+                    stage.outlineProvider.getOutline(stage, outline)
+                    assertEquals(inset.toFloat(), outline.radius, .1f)
+                    val arena = view("arena") as NativeArenaView
+                    val viewport =
+                        NativeArenaView::class.java.getDeclaredField("fullViewport").run {
+                            isAccessible = true
+                            get(arena) as android.graphics.RectF
+                        }
+                    assertEquals(
+                        "Preview fills its inset frame",
+                        arena.width / density,
+                        viewport.right,
+                        .5f,
+                    )
+                    assertEquals(
+                        "Preview fills the frame height",
+                        arena.height / density,
+                        viewport.bottom,
+                        .5f,
+                    )
+                    val scroll = view("readyScroll") as android.widget.ScrollView
+                    val holder = scroll.getChildAt(0) as ViewGroup
+                    val panel = holder.getChildAt(0)
+                    assertEquals(
+                        "The menu remains centered",
+                        holder.width / 2f,
+                        panel.left + panel.width / 2f,
+                        1f,
+                    )
+                }
                 if (session.screen == Screen.PLAYING) {
+                    val margins = stage.layoutParams as ViewGroup.MarginLayoutParams
+                    assertEquals(
+                        0,
+                        margins.leftMargin +
+                            margins.rightMargin +
+                            margins.topMargin +
+                            margins.bottomMargin,
+                    )
                     assertTrue("Loadout stays above the arena", loadout.bottom <= stage.top)
                     assertTrue("Main header stays above the loadout", header.bottom <= loadout.top)
+                    assertTrue("The live arena has rounded corners", stage.clipToOutline)
+                    assertEquals(
+                        android.graphics.Color.TRANSPARENT,
+                        activity.window.navigationBarColor,
+                    )
+                    if (android.os.Build.VERSION.SDK_INT >= 29)
+                        assertFalse(activity.window.isNavigationBarContrastEnforced)
+                    val outline = android.graphics.Outline()
+                    stage.outlineProvider.getOutline(stage, outline)
+                    assertEquals(
+                        (9 * activity.resources.displayMetrics.density + .5f).toInt().toFloat(),
+                        outline.radius,
+                        .1f,
+                    )
+                    val arena = view("arena") as NativeArenaView
+                    fun rectangle(name: String) =
+                        NativeArenaView::class.java.getDeclaredField(name).run {
+                            isAccessible = true
+                            get(arena) as android.graphics.RectF
+                        }
+                    val viewport = rectangle("fullViewport")
+                    val controls = rectangle("controlViewport")
+                    val safe = rectangle("safe")
+                    val density = activity.resources.displayMetrics.density
+                    assertEquals(
+                        "Maze fills the arena width after rotation",
+                        arena.width / density,
+                        viewport.right,
+                        .5f,
+                    )
+                    assertEquals(
+                        "Maze includes the lower gesture area",
+                        arena.height / density,
+                        viewport.bottom,
+                        .5f,
+                    )
+                    assertTrue(
+                        "Touch controls stay above the gesture area",
+                        controls.bottom <= arena.height / density - safe.bottom + .5f,
+                    )
                 }
                 assertEquals(
                     1,
@@ -2766,6 +2854,9 @@ class MainActivityTest {
                     }
                     SystemClock.sleep(250)
                     verify()
+                    screenshot(
+                        "arena-ready-${if (tablet) "tablet" else "phone"}-$mode-${if (landscape) "landscape" else "portrait"}",
+                    )
                     main { session.play() }
                     awaitPlaying(activity)
                     SystemClock.sleep(250)
@@ -2774,6 +2865,40 @@ class MainActivityTest {
                         "arena-status-${if (tablet) "tablet" else "phone"}-$mode-${if (landscape) "landscape" else "portrait"}",
                     )
                 }
+            }
+            main {
+                descendants(activity.window.decorView)
+                    .single { it.contentDescription == "Enter fullscreen" }
+                    .performClick()
+            }
+            awaitWindowFocus(activity, false)
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                await("Fullscreen hides system navigation") {
+                    !activity.window.decorView.rootWindowInsets.isVisible(
+                        android.view.WindowInsets.Type.navigationBars(),
+                    )
+                }
+            }
+            SystemClock.sleep(150)
+            verify()
+            main {
+                val arena =
+                    MainActivity::class.java.getDeclaredField("arena").run {
+                        isAccessible = true
+                        get(activity) as View
+                    }
+                val location = IntArray(2).also(arena::getLocationInWindow)
+                assertEquals(
+                    "Fullscreen maze reaches the window bottom",
+                    activity.window.decorView.height,
+                    location[1] + arena.height,
+                )
+            }
+            screenshot("arena-status-${if (tablet) "tablet" else "phone"}-fullscreen")
+            main {
+                descendants(activity.window.decorView)
+                    .single { it.contentDescription == "Exit fullscreen" }
+                    .performClick()
             }
         } finally {
             main { activity.finish() }
@@ -2908,8 +3033,16 @@ class MainActivityTest {
                     assertFalse(session.input.snapAim)
                     assertEquals(0.0, session.input.stickX, .001)
                     assertEquals(0.0, session.input.stickY, .001)
+                    NativeArenaView::class.java.getDeclaredField("aimTankX").apply {
+                        isAccessible = true
+                        setFloat(view, x / density + 20f)
+                    }
+                    NativeArenaView::class.java.getDeclaredField("aimTankY").apply {
+                        isAccessible = true
+                        setFloat(view, y / density)
+                    }
                     touch(MotionEvent.ACTION_DOWN, 32f)
-                    assertTrue(session.input.fire)
+                    assertTrue("Fire wins when a tank is under its button", session.input.fire)
                     assertEquals(
                         "The first firing input already aims right",
                         1.0,

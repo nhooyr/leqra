@@ -375,7 +375,7 @@ final class GameUITests: XCTestCase {
     }
 
     @MainActor
-    func testStatusPlacementPreservesPhoneRowsAndUsesTabletFooter() {
+    func testStatusPlacementPreservesPhoneRowsAndUsesTabletHeader() {
         func assertPlacement(_ app: XCUIApplication, content: String) {
             let body = app.descendants(matching: .any)[content].firstMatch
             let status = app.descendants(matching: .any)["arenaStatusBar"].firstMatch
@@ -385,7 +385,7 @@ final class GameUITests: XCTestCase {
             XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "arenaStatusBar").count, 1)
             if UIDevice.current.userInterfaceIdiom == .pad {
                 XCTAssertLessThanOrEqual(header.frame.maxY, body.frame.minY + 1)
-                XCTAssertGreaterThanOrEqual(status.frame.minY, body.frame.maxY - 1)
+                XCTAssertTrue(header.frame.contains(status.frame))
             } else {
                 XCTAssertLessThanOrEqual(header.frame.maxY, status.frame.minY + 1)
                 XCTAssertLessThanOrEqual(status.frame.maxY, body.frame.minY + 1)
@@ -440,7 +440,7 @@ final class GameUITests: XCTestCase {
         XCTAssertLessThanOrEqual(header.frame.maxY, stage.frame.minY)
         XCTAssertGreaterThanOrEqual(loadout.frame.minY, stage.frame.maxY)
         if UIDevice.current.userInterfaceIdiom == .pad {
-            XCTAssertGreaterThanOrEqual(status.frame.minY, loadout.frame.maxY)
+            XCTAssertLessThanOrEqual(status.frame.maxY, stage.frame.minY)
         } else {
             XCTAssertLessThanOrEqual(status.frame.maxY, stage.frame.minY)
         }
@@ -466,7 +466,7 @@ final class GameUITests: XCTestCase {
         XCTAssertTrue(header.exists)
         XCTAssertTrue(loadout.exists)
         if UIDevice.current.userInterfaceIdiom == .pad {
-            XCTAssertGreaterThanOrEqual(status.frame.minY, loadout.frame.maxY)
+            XCTAssertLessThanOrEqual(status.frame.maxY, stage.frame.minY)
         } else {
             XCTAssertLessThanOrEqual(status.frame.maxY, stage.frame.minY)
         }
@@ -1234,7 +1234,7 @@ final class GameUITests: XCTestCase {
     @MainActor
     func testPhoneArenaFillsBottomAndPreviewRedrawsAfterRotation() throws {
         guard UIDevice.current.userInterfaceIdiom == .phone else {
-            throw XCTSkip("Phone scenes reach the screen edge; tablets retain their bottom status footer.")
+            throw XCTSkip("Phone scenes retain separate top header and status rows.")
         }
         let preview = launch(arguments: ["--probe-native-layout"])
         for landscape in [false, true] {
@@ -1289,6 +1289,122 @@ final class GameUITests: XCTestCase {
                 reveal(app.buttons["Resume"], in: app)
                 XCTAssertTrue(app.buttons["Resume"].isHittable, context)
                 app.buttons["Resume"].tap()
+            }
+        }
+    }
+
+    @MainActor
+    func testTabletCombinesStatusInHeaderAndFillsArena() throws {
+        guard UIDevice.current.userInterfaceIdiom == .pad else {
+            throw XCTSkip("Tablet layout combines status with its top header.")
+        }
+        for mode in ["ready", "Infinity", "fixed"] {
+            let app: XCUIApplication
+            if mode == "ready" {
+                app = launch(arguments: ["--probe-native-layout"])
+            } else {
+                app = XCUIApplication()
+                app.launchArguments =
+                    [
+                        "-serverURL", "http://127.0.0.1:1", "--public-session-test-namespace",
+                        "tablet-layout-" + UUID().uuidString, "--reset-public-session-test-store",
+                        "--skip-public-session-restore", "--probe-direct-aim", "--probe-native-layout",
+                        "--probe-audio-off",
+                    ] + (mode == "fixed" ? ["--probe-fixed"] : [])
+                app.launch()
+                XCTAssertTrue(app.buttons["pauseGame"].waitForExistence(timeout: 10))
+            }
+            defer { app.terminate() }
+            for landscape in [false, true] {
+                let context = "Tablet \(mode) \(landscape ? "landscape" : "portrait")"
+                XCUIDevice.shared.orientation = landscape ? .landscapeLeft : .portrait
+                waitForOrientation(app, landscape: landscape)
+                let stage = app.descendants(matching: .any)[
+                    mode == "ready" ? "readyRoomStage" : "arenaStage"
+                ].firstMatch
+                let status = app.descendants(matching: .any)["arenaStatusBar"].firstMatch
+                let header = app.descendants(matching: .any)["gameHeader"].firstMatch
+                XCTAssertTrue(stage.waitForExistence(timeout: 5), context)
+                XCTAssertTrue(status.waitForExistence(timeout: 5), context)
+                XCTAssertEqual(
+                    app.descendants(matching: .any).matching(identifier: "arenaStatusBar").count, 1, context)
+                XCTAssertTrue(header.frame.contains(status.frame), context)
+                XCTAssertLessThanOrEqual(header.frame.maxY, stage.frame.minY + 1, context)
+                XCTAssertTrue(app.frame.contains(header.frame), context)
+                let values = p2InputState(stage)
+                XCTAssertEqual(values["viewWidth"] ?? 0, stage.frame.width, accuracy: 1, context)
+                XCTAssertEqual(values["viewHeight"] ?? 0, stage.frame.height, accuracy: 1, context)
+                XCTAssertEqual(values["viewportBottom"], 0, context)
+                XCTAssertEqual(values["viewportHeight"], values["viewHeight"], context)
+                if mode == "ready" {
+                    XCTAssertLessThanOrEqual(stage.frame.maxY, app.frame.maxY - 8, context)
+                    let covered = XCTNSPredicateExpectation(
+                        predicate: NSPredicate { _, _ in
+                            self.p2InputState(stage)["mapCoversViewport"] == 1
+                        }, object: stage)
+                    XCTAssertEqual(XCTWaiter.wait(for: [covered], timeout: 5), .completed, context)
+                    XCTAssertEqual(
+                        app.scrollViews["readyRoomScroll"].frame.maxY, stage.frame.maxY, accuracy: 1, context)
+                } else {
+                    XCTAssertEqual(stage.frame.maxY, app.frame.maxY, accuracy: 1, context)
+                    let inset = try XCTUnwrap(values["controlBottomInset"])
+                    XCTAssertGreaterThan(inset, 0, context)
+                    XCTAssertGreaterThanOrEqual((values["fireBottom"] ?? 0) - inset, 8, context)
+                    XCTAssertGreaterThanOrEqual((values["stickBottom"] ?? 0) - inset, 8, context)
+                }
+                if mode != "fixed" {
+                    let leaderboard = app.buttons["toggleStandings"]
+                    XCTAssertTrue(leaderboard.isHittable, context)
+                    XCTAssertTrue(header.frame.contains(leaderboard.frame), context)
+                }
+                capture(app, name: context)
+            }
+        }
+    }
+
+    @MainActor
+    func testTabletCombinedHeaderFitsNarrowWindows() throws {
+        guard UIDevice.current.userInterfaceIdiom == .pad else {
+            throw XCTSkip("This regression test exercises iPad split-window widths.")
+        }
+        XCUIDevice.shared.orientation = .portrait
+        for width in [320, 500] {
+            for fixed in [false, true] {
+                let app = XCUIApplication()
+                app.launchArguments =
+                    [
+                        "-serverURL", "http://127.0.0.1:1", "-showFPS", "YES",
+                        "--public-session-test-namespace", "tablet-narrow-" + UUID().uuidString,
+                        "--reset-public-session-test-store", "--skip-public-session-restore",
+                        "--probe-direct-aim", "--probe-native-layout", "--probe-content-width", String(width),
+                        "--probe-audio-off",
+                    ] + (fixed ? ["--probe-fixed"] : [])
+                app.launch()
+                defer { app.terminate() }
+                XCTAssertTrue(app.buttons["pauseGame"].waitForExistence(timeout: 10))
+                let header = app.descendants(matching: .any)["gameHeader"].firstMatch
+                let status = app.descendants(matching: .any)["arenaStatusBar"].firstMatch
+                let stage = arena(in: app)
+                XCTAssertLessThanOrEqual(header.frame.width, CGFloat(width) + 1)
+                XCTAssertTrue(header.frame.contains(status.frame))
+                XCTAssertLessThanOrEqual(header.frame.maxY, stage.frame.minY + 1)
+                for identifier in ["brand", "arenaTitle", "gameScore"] {
+                    let item = app.descendants(matching: .any)[identifier].firstMatch
+                    XCTAssertTrue(item.exists, identifier)
+                    XCTAssertTrue(header.frame.contains(item.frame), identifier)
+                }
+                let fps = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'fps:'")).firstMatch
+                XCTAssertTrue(fps.exists)
+                XCTAssertTrue(header.frame.contains(fps.frame))
+                XCTAssertTrue(app.buttons["pauseGame"].isHittable)
+                let more = app.buttons["More game controls"]
+                XCTAssertTrue(more.isHittable)
+                if !fixed { XCTAssertTrue(app.buttons["toggleStandings"].isHittable) }
+                capture(app, name: "Tablet \(width)-point \(fixed ? "fixed" : "Infinity") header")
+                if width == 320 && !fixed {
+                    more.tap()
+                    XCTAssertTrue(app.buttons["Mute sound"].waitForExistence(timeout: 5))
+                }
             }
         }
     }

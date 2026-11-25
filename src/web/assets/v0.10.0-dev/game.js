@@ -1492,10 +1492,9 @@
     const touchDevice = coarse || (navigator.maxTouchPoints || 0) > 0,
       deviceWidth = window.screen?.width || innerWidth,
       deviceHeight = window.screen?.height || innerHeight
-    document.body.classList.toggle(
-      "status-footer",
-      !touchDevice || Math.min(deviceWidth, deviceHeight) >= 600,
-    )
+    document.body.classList.toggle("status-footer", !touchDevice)
+    document.body.classList.toggle("tablet-header", touchDevice && Math.min(deviceWidth, deviceHeight) >= 600)
+    syncArenaHeader()
     renderPowerLegend()
     clearMatchSelection()
     $("pauseInstructions").innerHTML =
@@ -14698,7 +14697,10 @@
         headerChanged = document.body.classList.contains("public-infinity-preview") !== publicArena
       if (coverChanged) document.body.classList.toggle("infinity-preview", shown)
       if (headerChanged) document.body.classList.toggle("public-infinity-preview", publicArena)
-      if (coverChanged || headerChanged) resize()
+      if (coverChanged || headerChanged) {
+        syncArenaHeader()
+        resize()
+      }
       if (fpsHome) {
         if (publicArena && fps.parentElement !== bar) bar.insertBefore(fps, $("infinityPreviewRight"))
         else if (!publicArena && fps.parentElement === bar)
@@ -18662,6 +18664,28 @@
   let sidebarHome = null
   const sidebarPowerText = new Map()
   let headerLoan = null
+  const arenaHeaderHomes = new Map()
+  function syncArenaHeader() {
+    const header = $("gameHeader"),
+      bars = [$("arenaStatusBar"), $("infinityPreviewBar"), $("infiniteStatusbar")]
+    for (const bar of bars)
+      if (!arenaHeaderHomes.has(bar))
+        arenaHeaderHomes.set(bar, { parent: bar.parentElement, next: bar.nextSibling })
+    const target = document.body.classList.contains("tablet-header")
+      ? header.parentElement === $("infiniteHeader")
+        ? $("infiniteStatusbar")
+        : !$("infinityPreviewBar").hidden
+          ? $("infinityPreviewBar")
+          : $("arenaStatusBar")
+      : null
+    for (const bar of bars) {
+      if (bar === target) header.insertBefore(bar, header.querySelector(".header-right"))
+      else if (bar.parentElement === header) {
+        const home = arenaHeaderHomes.get(bar)
+        home.parent.insertBefore(bar, home.next?.parentElement === home.parent ? home.next : null)
+      }
+    }
+  }
   function mountHeader(container) {
     const header = $("gameHeader"),
       chat = $("chatPanel"),
@@ -18684,6 +18708,7 @@
     sidebar.setAttribute("aria-label", "Open sidebar")
     sidebar.title = "Open sidebar"
     $("sidebarDetailsBtn").setAttribute("aria-controls", "infinitePauseMenu")
+    syncArenaHeader()
   }
   function restoreHeader(container) {
     const header = $("gameHeader"),
@@ -18701,6 +18726,7 @@
     $("sidebarDetailsBtn").setAttribute("aria-expanded", "false")
     document.body.classList.remove("infinity-header-active")
     headerLoan = null
+    syncArenaHeader()
   }
   function syncSidebarContext() {
     const sidebar = $("gameSidebar"),

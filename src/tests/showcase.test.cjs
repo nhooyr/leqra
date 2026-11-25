@@ -110,6 +110,7 @@ function boot(scene = {}) {
     },
     hidden: false,
     body: {
+      classList: { contains: () => false },
       append(node) {
         nodes.push(node)
       },

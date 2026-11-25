@@ -7707,7 +7707,7 @@ body .callsign-account-button.secondary {
   align-items: center;
 }
 
-/* Phones keep arena status above play; larger devices keep it below the maze. */
+/* Desktop status stays below the maze; tablets share one top header. */
 body.status-footer .arena-shell > .arena-bar {
   order: 1;
   border-top: 1px solid var(--border);
@@ -7739,12 +7739,67 @@ body.status-footer .showcase-dialog > .arena-bar {
   border-top: 1px solid var(--border);
   border-bottom: 0;
 }
-body.status-footer.touch-ui #infiniteArena[open] {
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+body.tablet-header #infiniteArena[open] {
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
-body.status-footer.touch-ui #infiniteArena > .infinite-underbar {
+body.tablet-header #infiniteArena > .infinite-underbar {
   grid-row: 2;
 }
-body.status-footer.touch-ui #infiniteArena > .infinite-stage {
+body.tablet-header #infiniteArena > .infinite-stage {
   grid-row: 3;
+}
+body.tablet-header .header {
+  flex-wrap: nowrap;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+}
+body.tablet-header .header > .arena-bar {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+body.tablet-header .header .arena-title,
+body.tablet-header .header .bar-right {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+body.tablet-header .header .fps-indicator {
+  order: 1;
+}
+body.tablet-header .header .bar-right {
+  order: 2;
+}
+body.tablet-header .header .mobile-scores {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+body.tablet-header .brand-sub {
+  display: none;
+}
+body.tablet-header .header-right {
+  gap: 4px;
+  flex-wrap: nowrap;
+}
+body.tablet-header .header-right .icon-btn {
+  width: 30px;
+  min-width: 30px;
+  height: 32px;
+}
+body.tablet-header .showcase-dialog[open] {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+@media (max-width: 760px) {
+  body.tablet-header .brand-name {
+    display: none;
+  }
+  body.tablet-header .brand-mark {
+    width: 24px;
+    height: 24px;
+  }
 }

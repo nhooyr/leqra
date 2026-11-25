@@ -33,27 +33,55 @@ async function checkStatusPlacement(page, arena, label) {
       stage = root.querySelector(arena === "fixed" ? "#arenaWrap" : ".infinite-stage"),
       status =
         arena === "fixed"
-          ? [...document.querySelectorAll(".arena-shell > .arena-bar")].find(
-              (node) => node.getBoundingClientRect().height > 0,
+          ? document.getElementById(
+              document.body.classList.contains("public-infinity-preview")
+                ? "infinityPreviewBar"
+                : "arenaStatusBar",
             )
-          : root.querySelector(arena === "showcase" ? ".showcase-dialog > .arena-bar" : "#infiniteStatusbar"),
+          : root.querySelector(arena === "showcase" ? ".arena-bar" : "#infiniteStatusbar"),
       rect = (node) => {
         const { top, bottom, height } = node.getBoundingClientRect()
         return { top, bottom, height }
       }
     return {
       footer: document.body.classList.contains("status-footer"),
+      combined: document.body.classList.contains("tablet-header"),
       header: rect(header),
       stage: rect(stage),
       status: rect(status),
       height: innerHeight,
+      statusInHeader: header.contains(status),
+      headerStatusCount: header.querySelectorAll(".arena-bar").length,
+      headerOverflows: header.scrollWidth > header.clientWidth + 1,
+      statusText: [...status.querySelectorAll("span,strong,h2,button")]
+        .filter((node) => node.getClientRects().length && !node.hidden && node.textContent.trim())
+        .map((node) => ({
+          text: node.textContent,
+          font: parseFloat(getComputedStyle(node).fontSize),
+          overflow: node.scrollWidth > node.clientWidth + 1,
+        })),
     }
   }, arena)
   assert.ok(data.status.height > 0, label + " status hidden")
   assert.ok(data.header.bottom <= data.stage.top + 1, label + " main header moved below the maze")
-  if (data.footer)
-    assert.ok(data.status.top >= data.stage.bottom - 1, label + " status is not below the maze")
-  else assert.ok(data.status.bottom <= data.stage.top + 1, label + " phone status moved below the maze")
+  if (data.combined) {
+    assert.equal(data.statusInHeader, true, label + " tablet status is outside main header")
+    assert.equal(data.headerStatusCount, 1, label + " tablet header duplicates arena status")
+    assert.ok(
+      data.status.top >= data.header.top - 1 && data.status.bottom <= data.header.bottom + 1,
+      label + " combined status leaves header",
+    )
+    assert.equal(data.headerOverflows, false, label + " combined header overflows")
+  } else {
+    assert.equal(data.statusInHeader, false, label + " separate arena status moved into main header")
+    if (data.footer)
+      assert.ok(data.status.top >= data.stage.bottom - 1, label + " status is not below the maze")
+    else assert.ok(data.status.bottom <= data.stage.top + 1, label + " phone status moved below the maze")
+  }
+  for (const text of data.statusText) {
+    assert.ok(text.font >= 10, label + " status text too small: " + text.text)
+    assert.equal(text.overflow, false, label + " status text clipped: " + text.text)
+  }
   assert.ok(data.status.bottom <= data.height + 1, label + " status outside viewport")
 }
 async function checkPreviewCoverage(page, label) {

@@ -111,11 +111,8 @@ class MainActivity : Activity() {
     private var safeLeft = 0
     private var safeRight = 0
     private var safeBottom = 0
-    private val bottomStatus: Boolean
+    private val combinedHeader: Boolean
         get() = resources.configuration.smallestScreenWidthDp >= 600
-
-    private val arenaBottomInset: Int
-        get() = if (bottomStatus) 0 else safeBottom
 
     private val pressed = mutableSetOf<Int>()
     private var controlOwner: Int? = null
@@ -483,6 +480,8 @@ class MainActivity : Activity() {
             resources.configuration.screenWidthDp -
                 (safeLeft + safeRight) / resources.displayMetrics.density
         val loading = session.screen == Screen.CONNECTING
+        statusLine.visibility = if (loading) View.GONE else View.VISIBLE
+        configureStatusLayout()
         header.display(
             landscape,
             availableWidthDp,
@@ -505,10 +504,8 @@ class MainActivity : Activity() {
             if (awake) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
-        configureStatusLayout()
         configureLoadoutLayout()
         loadout.visibility = if (playing && session.hasLocalPlayer) View.VISIBLE else View.GONE
-        statusLine.visibility = if (loading) View.GONE else View.VISIBLE
         arena.visibility = if (loading) View.INVISIBLE else View.VISIBLE
         if (!loading) statusLine.update(session, fps)
         objectiveLine.update(session.snapshot.objectives.takeIf { playing }, session.rules)
@@ -605,44 +602,54 @@ class MainActivity : Activity() {
     }
 
     private fun configureStatusLayout() {
-        val target = if (bottomStatus) root.childCount - 1 else root.indexOfChild(header) + 1
-        if (root.indexOfChild(statusLine) != target) {
-            root.removeView(statusLine)
-            root.addView(statusLine, target, LinearLayout.LayoutParams(-1, -2))
-        }
+        header.placeStatus(statusLine, combinedHeader)
         statusLine.setPadding(
-            dp(12) + safeLeft,
+            if (combinedHeader) dp(4) else dp(12) + safeLeft,
             dp(6),
-            dp(12) + safeRight,
-            dp(6) + if (bottomStatus) safeBottom else 0,
+            if (combinedHeader) dp(4) else dp(12) + safeRight,
+            dp(6),
         )
         readyScroll?.apply {
-            setPadding(paddingLeft, paddingTop, paddingRight, dp(16) + arenaBottomInset)
+            setPadding(paddingLeft, paddingTop, paddingRight, dp(16))
         }
     }
 
     private fun configureLoadoutLayout() {
         if (!::loadout.isInitialized) return
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-        val fixedPortrait = session.screen == Screen.PLAYING && !session.infinity && !landscape
         val paired = session.localID2 != null
-        val key = "$fixedPortrait:$landscape:$paired:$safeLeft:$safeRight:$arenaBottomInset"
+        val key = "${session.screen}:$landscape:$paired:$safeLeft:$safeRight:$safeBottom"
         if (key == loadoutLayoutKey) return
         loadoutLayoutKey = key
+        val ready = session.screen == Screen.READY
+        val inset = if (ready) dp(9) else 0
+        stage.layoutParams =
+            (stage.layoutParams as LinearLayout.LayoutParams).apply {
+                setMargins(
+                    inset + if (ready) safeLeft else 0,
+                    inset,
+                    inset + if (ready) safeRight else 0,
+                    inset + if (ready) safeBottom else 0,
+                )
+            }
+        val rounded = session.screen != Screen.CONNECTING
+        stage.background =
+            if (rounded) background(this, sunken, 9, NativeStyle.edge)
+            else android.graphics.drawable.ColorDrawable(sunken)
+        stage.foreground =
+            if (rounded) background(this, android.graphics.Color.TRANSPARENT, 9, NativeStyle.edge)
+            else null
+        stage.clipToOutline = rounded
         loadout.compact = landscape || paired
         loadout.stacked = paired && !landscape
         loadout.safeLeft = safeLeft
         loadout.safeRight = safeRight
         loadout.safeBottom = 0
-        arena.safeInsets(safeLeft, 0, safeRight, arenaBottomInset)
-        updateRoundAnnouncementInsets(fixedPortrait)
+        if (ready) arena.safeInsets(0, 0, 0, 0)
+        else arena.safeInsets(safeLeft, 0, safeRight, safeBottom)
+        roundAnnouncement.setSafeArea(safeLeft, safeRight, safeBottom)
         loadout.requestLayout()
         loadout.invalidate()
-    }
-
-    private fun updateRoundAnnouncementInsets(fixedPortrait: Boolean) {
-        val reserved = if (fixedPortrait && !session.spectating) dp(119) + arenaBottomInset else 0
-        roundAnnouncement.setSafeArea(safeLeft, safeRight, reserved)
     }
 
     private fun clearHeldControls(resetPrediction: Boolean = true) {
@@ -708,12 +715,12 @@ class MainActivity : Activity() {
             ScrollView(this).apply {
                 isFillViewport = true
                 clipToPadding = false
-                setPadding(dp(12) + safeLeft, dp(12), dp(12) + safeRight, dp(16) + arenaBottomInset)
+                setPadding(dp(12), dp(12), dp(12), dp(16))
             }
         val holder = column(this).apply { gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL }
         val panel = column(this, 16).apply { background = panelBackground(this@MainActivity) }
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-        val available = resources.displayMetrics.widthPixels - safeLeft - safeRight - dp(24)
+        val available = resources.displayMetrics.widthPixels - safeLeft - safeRight - dp(42)
         holder.addView(
             panel,
             LinearLayout.LayoutParams(minOf(available, dp(if (landscape) 650 else 420)), -2),

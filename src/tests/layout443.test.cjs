@@ -57,6 +57,7 @@ function boot(width, height, coarse = false) {
     modeInstructions: () => "",
     hasLocalP2: () => false,
     focusLost() {},
+    syncArenaHeader() {},
     wrap: { getBoundingClientRect: () => ({ width: width - 20, height: height - 180 }) },
     stick: {},
     renderPixelRatio: () => 1,
@@ -79,21 +80,97 @@ function boot(width, height, coarse = false) {
   return s
 }
 
-test("arena status is a footer on desktop and tablets, including tablet split views, but stays above phones", () => {
-  for (const [width, height, touch, device, footer] of [
-    [1440, 900, false, [1440, 900], true],
-    [500, 800, false, [1440, 900], true],
-    [768, 1024, true, [768, 1024], true],
-    [1024, 768, true, [768, 1024], true],
-    [500, 768, true, [768, 1024], true],
-    [390, 844, true, [390, 844], false],
-    [844, 390, true, [390, 844], false],
+test("desktop uses a status footer, tablets combine the header, and phones retain two top rows", () => {
+  for (const [width, height, touch, device, footer, combined] of [
+    [1440, 900, false, [1440, 900], true, false],
+    [500, 800, false, [1440, 900], true, false],
+    [768, 1024, true, [768, 1024], false, true],
+    [1024, 768, true, [768, 1024], false, true],
+    [500, 768, true, [768, 1024], false, true],
+    [390, 844, true, [390, 844], false, false],
+    [844, 390, true, [390, 844], false, false],
   ]) {
     const s = boot(width, height, touch)
     s.window.screen = { width: device[0], height: device[1] }
     s.setLayout()
     assert.equal(s.document.body.classList.contains("status-footer"), footer, width + "x" + height)
+    assert.equal(s.document.body.classList.contains("tablet-header"), combined, width + "x" + height)
   }
+})
+
+test("tablet header moves each live status row once and restores its original position on layout changes", () => {
+  class Element {
+    children = []
+    parentElement = null
+    hidden = false
+    constructor(id) {
+      this.id = id
+    }
+    get nextSibling() {
+      return this.parentElement?.children[this.parentElement.children.indexOf(this) + 1] || null
+    }
+    insertBefore(node, next) {
+      if (node.parentElement) node.parentElement.children.splice(node.parentElement.children.indexOf(node), 1)
+      const at = next ? this.children.indexOf(next) : this.children.length
+      this.children.splice(at, 0, node)
+      node.parentElement = this
+    }
+    querySelector() {
+      return this.children.find((child) => child.id === "actions")
+    }
+  }
+  const ids = [
+    "root",
+    "gameHeader",
+    "actions",
+    "shell",
+    "infinityPreviewBar",
+    "arenaStatusBar",
+    "stage",
+    "dialog",
+    "infiniteHeader",
+    "infiniteStatusbar",
+    "infiniteStage",
+  ]
+  const elements = new Map(ids.map((id) => [id, new Element(id)])),
+    $ = (id) => elements.get(id),
+    append = (parent, ...children) => children.forEach((id) => $(parent).insertBefore($(id), null)),
+    body = node()
+  append("root", "gameHeader", "shell")
+  append("gameHeader", "actions")
+  append("shell", "infinityPreviewBar", "arenaStatusBar", "stage")
+  append("dialog", "infiniteHeader", "infiniteStatusbar", "infiniteStage")
+  $("infinityPreviewBar").hidden = true
+  const s = { $, document: { body }, arenaHeaderHomes: new Map() }
+  vm.createContext(s)
+  vm.runInContext(declaration("syncArenaHeader"), s)
+  body.classList.toggle("tablet-header", true)
+  s.syncArenaHeader()
+  assert.equal($("arenaStatusBar").parentElement, $("gameHeader"))
+  $("infinityPreviewBar").hidden = false
+  s.syncArenaHeader()
+  assert.equal($("infinityPreviewBar").parentElement, $("gameHeader"))
+  assert.deepEqual(
+    $("shell").children.map((child) => child.id),
+    ["arenaStatusBar", "stage"],
+  )
+  append("infiniteHeader", "gameHeader")
+  s.syncArenaHeader()
+  s.syncArenaHeader()
+  assert.deepEqual(
+    $("gameHeader").children.map((child) => child.id),
+    ["infiniteStatusbar", "actions"],
+  )
+  body.classList.toggle("tablet-header", false)
+  s.syncArenaHeader()
+  assert.deepEqual(
+    $("dialog").children.map((child) => child.id),
+    ["infiniteHeader", "infiniteStatusbar", "infiniteStage"],
+  )
+  assert.deepEqual(
+    $("shell").children.map((child) => child.id),
+    ["infinityPreviewBar", "arenaStatusBar", "stage"],
+  )
 })
 
 test("startup callsign editors are top-level before collapsed room settings and player rosters", () => {

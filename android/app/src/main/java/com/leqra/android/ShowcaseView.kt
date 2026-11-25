@@ -39,7 +39,9 @@ internal class ShowcaseView(
         isFocusableInTouchMode = true
         add(header, gap = 0)
         add(status, gap = 0)
-        field.setBackgroundColor(NativeStyle.sunken)
+        field.background = NativeStyle.background(context, NativeStyle.sunken, 9)
+        field.foreground = NativeStyle.background(context, android.graphics.Color.TRANSPARENT, 9)
+        field.clipToOutline = true
         addView(field, LayoutParams(-1, 0, 1f))
         add(loadout, gap = 0)
         rebuild()
@@ -83,12 +85,8 @@ internal class ShowcaseView(
     }
 
     private fun updateLayout() {
-        val bottomStatus = resources.configuration.smallestScreenWidthDp >= 600
-        val statusIndex = if (bottomStatus) childCount - 1 else indexOfChild(header) + 1
-        if (indexOfChild(status) != statusIndex) {
-            removeView(status)
-            addView(status, statusIndex, LayoutParams(-1, -2))
-        }
+        val combined = resources.configuration.smallestScreenWidthDp >= 600
+        header.placeStatus(status, combined)
         header.display(
             !portrait,
             (width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels) /
@@ -103,15 +101,15 @@ internal class ShowcaseView(
             context.dp(5),
         )
         status.setPadding(
-            context.dp(12) + safeLeft,
+            if (combined) context.dp(4) else context.dp(12) + safeLeft,
             context.dp(6),
-            context.dp(12) + safeRight,
-            context.dp(6) + if (bottomStatus) safeBottom else 0,
+            if (combined) context.dp(4) else context.dp(12) + safeRight,
+            context.dp(6),
         )
         loadout.compact = !portrait
         loadout.safeLeft = safeLeft
         loadout.safeRight = safeRight
-        loadout.safeBottom = if (bottomStatus) 0 else safeBottom
+        loadout.safeBottom = safeBottom
         arena.safeInsets(safeLeft, 0, safeRight, 0)
         loadout.requestLayout()
     }

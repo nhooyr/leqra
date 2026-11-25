@@ -6,8 +6,11 @@ struct GameHeader: View {
     var landscape: Bool
     var availableWidth: CGFloat
     var showcase = false
+    var embeddedStatus = false
+    var statusPreview = false
     private var compact: Bool {
         availableWidth < 375 || (availableWidth < 500 && session.room != nil && !showcase)
+            || embeddedStatus && availableWidth < 700
     }
     var body: some View {
         HStack(spacing: compact ? 4 : 8) {
@@ -32,33 +35,64 @@ struct GameHeader: View {
                         .accessibilityLabel("View leqra on GitHub")
                 }
             }
+            if embeddedStatus {
+                ArenaStatusBar(
+                    session: session, preview: statusPreview,
+                    showcase: showcase ? session.showcaseFrame : nil,
+                    embedded: true, compact: compact
+                ).layoutPriority(1)
+            }
             Spacer(minLength: 3)
-            if let room = session.room, !showcase {
-                Button("ROOM") { if session.screen == .playing { session.setPaused(true) } }
-                    .font(WebStyle.mono(10, weight: .bold)).foregroundStyle(WebStyle.accent).padding(6)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4).stroke(WebStyle.accent.opacity(0.35), lineWidth: 1)
+            if embeddedStatus && availableWidth < 600 {
+                Menu {
+                    if let room = session.room, !showcase {
+                        Button("Room " + room.code) {
+                            if session.screen == .playing { session.setPaused(true) }
+                        }
+                    }
+                    Button(session.soundEnabled ? "Mute sound" : "Unmute sound") {
+                        session.soundEnabled.toggle()
+                        session.applyAudioSetting(preview: .unmute)
+                    }
+                    Button(session.fullscreen ? "Exit fullscreen" : "Enter fullscreen") {
+                        session.fullscreen.toggle()
+                    }
+                    if !showcase { Button("Open sidebar") { session.showSidebar = true } }
+                } label: {
+                    Image(systemName: "ellipsis").frame(width: 36, height: 36)
+                }.accessibilityLabel("More game controls").foregroundStyle(WebStyle.accent)
+                    .background(WebStyle.surface, in: RoundedRectangle(cornerRadius: 8))
+            } else {
+                if let room = session.room, !showcase {
+                    Button("ROOM") { if session.screen == .playing { session.setPaused(true) } }
+                        .font(WebStyle.mono(10, weight: .bold)).foregroundStyle(WebStyle.accent).padding(6)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4).stroke(
+                                WebStyle.accent.opacity(0.35), lineWidth: 1
+                            )
                             .allowsHitTesting(false)
-                    )
-                    .accessibilityLabel("Room " + room.code)
-            }
-            WebIconButton(
-                symbol: session.soundEnabled ? "speaker.wave.2" : "speaker.slash",
-                label: session.soundEnabled ? "Mute sound" : "Unmute sound", active: session.soundEnabled
-            ) {
-                guard !showcase else { return }
-                session.soundEnabled.toggle()
-                session.applyAudioSetting(preview: .unmute)
-            }
-            if !NativePlatform.isDesktop {
+                        )
+                        .accessibilityLabel("Room " + room.code)
+                }
                 WebIconButton(
-                    symbol: "viewfinder", label: session.fullscreen ? "Exit fullscreen" : "Enter fullscreen",
-                    active: session.fullscreen
-                ) { if !showcase { session.fullscreen.toggle() } }
-            }
-            if !showcase && (session.readyRoom || session.screen == .playing) {
-                WebIconButton(symbol: "rectangle.rightthird.inset.filled", label: "Open sidebar") {
-                    session.showSidebar = true
+                    symbol: session.soundEnabled ? "speaker.wave.2" : "speaker.slash",
+                    label: session.soundEnabled ? "Mute sound" : "Unmute sound", active: session.soundEnabled
+                ) {
+                    guard !showcase else { return }
+                    session.soundEnabled.toggle()
+                    session.applyAudioSetting(preview: .unmute)
+                }
+                if !NativePlatform.isDesktop {
+                    WebIconButton(
+                        symbol: "viewfinder",
+                        label: session.fullscreen ? "Exit fullscreen" : "Enter fullscreen",
+                        active: session.fullscreen
+                    ) { if !showcase { session.fullscreen.toggle() } }
+                }
+                if !showcase && (session.readyRoom || session.screen == .playing) {
+                    WebIconButton(symbol: "rectangle.rightthird.inset.filled", label: "Open sidebar") {
+                        session.showSidebar = true
+                    }
                 }
             }
             if showcase || session.screen == .playing {
@@ -78,9 +112,11 @@ struct GameHeader: View {
     }
     private var versionBadge: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 4) {
-                GitHubMark().fill(WebStyle.text).frame(width: 17, height: 17)
-                Text(NetworkClient.supportedVersion).font(WebStyle.mono()).fixedSize()
+            if !embeddedStatus || !compact {
+                HStack(spacing: 4) {
+                    GitHubMark().fill(WebStyle.text).frame(width: 17, height: 17)
+                    Text(NetworkClient.supportedVersion).font(WebStyle.mono()).fixedSize()
+                }
             }
             GitHubMark().fill(WebStyle.text).frame(width: 17, height: 17)
         }.foregroundStyle(WebStyle.muted).padding(.horizontal, 5).frame(minHeight: 32)
@@ -96,6 +132,8 @@ struct ArenaStatusBar: View {
     var preview = false
     var showcase: ShowcaseScene?
     var atBottom = false
+    var embedded = false
+    var compact = false
     private var infinity: Bool {
         showcase != nil
             || (preview
@@ -115,66 +153,91 @@ struct ArenaStatusBar: View {
     }
     var body: some View {
         HStack(spacing: 6) {
-            VStack(alignment: .leading, spacing: 3) {
-                if !title.isEmpty {
-                    HStack(spacing: 6) {
-                        Circle().fill(WebStyle.accent).frame(width: 6, height: 6)
-                        Text(title.uppercased()).font(WebStyle.mono()).fixedSize(
-                            horizontal: false, vertical: true
-                        )
-                        .accessibilityIdentifier(showcase == nil ? "arenaTitle" : "showcaseTitle")
-                    }
+            if embedded {
+                VStack(alignment: .leading, spacing: 2) {
+                    identity
+                    if infinity { infinityStatus } else { finiteStatus }
                 }
-                if let count = onlineCount {
-                    Text("\(count) online").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
-                } else if !infinity && session.showFPS {
-                    Text(performance).font(WebStyle.mono()).foregroundStyle(WebStyle.accent)
-                }
-            }.frame(maxWidth: .infinity, alignment: .leading)
-            if infinity {
-                VStack(spacing: 2) {
-                    if session.showFPS { Text(performance).foregroundStyle(WebStyle.accent) }
-                    if session.spectating && !preview && showcase == nil {
-                        Text(session.spectatorFollowingLabel).foregroundStyle(WebStyle.soft)
-                            .fixedSize(horizontal: false, vertical: true).frame(minHeight: 24)
-                            .accessibilityIdentifier("spectatorFollowing")
-                    } else {
-                        Text(
-                            "score: \(showcasePilot?.score ?? (preview ? 0 : session.score)), rank: #\(showcaseRank ?? (preview ? 0 : session.localTank?.rank ?? 0))"
-                        )
-                        .foregroundStyle(WebStyle.paint(showcasePilot?.colorIndex ?? session.colorIndex))
-                        .accessibilityIdentifier("gameScore")
-                    }
-                }.font(WebStyle.mono()).frame(maxWidth: .infinity)
-                Button("LEADERBOARD") { if showcase == nil { session.showScores.toggle() } }
-                    .buttonStyle(.plain)
-                    .font(WebStyle.mono(10, weight: .semibold)).foregroundStyle(WebStyle.accent)
-                    .padding(.horizontal, 7).frame(minHeight: 30)
-                    .accessibilityIdentifier("toggleStandings")
-                    .background(WebStyle.sunken, in: RoundedRectangle(cornerRadius: 4))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4).stroke(WebStyle.border, lineWidth: 1)
-                            .allowsHitTesting(false))
             } else {
-                HStack(spacing: 5) {
-                    ForEach(scoreSides.prefix(8)) { entry in
-                        HStack(spacing: 2) {
-                            RoundedRectangle(cornerRadius: 1).fill(WebStyle.paint(entry.colorIndex)).frame(
-                                width: 5, height: 5)
-                            Text("\(entry.score)")
-                        }
-                    }
-                }.font(WebStyle.mono()).accessibilityIdentifier("gameScore")
-                Text("ROUND \(String(format: "%02d", max(1, session.snapshot.round)))").font(WebStyle.mono())
-                Text(clock).font(WebStyle.mono()).foregroundStyle(WebStyle.accent)
+                identity
+                if infinity { infinityStatus } else { finiteStatus }
             }
-        }.foregroundStyle(WebStyle.text).padding(.horizontal, 12).padding(.vertical, 8)
-            .frame(minHeight: preview || !infinity ? 52 : 39).background(WebStyle.surface)
+            if infinity { leaderboard }
+        }.foregroundStyle(WebStyle.text).padding(.horizontal, embedded ? 4 : 12)
+            .padding(.vertical, embedded ? 0 : 8)
+            .frame(minHeight: embedded ? nil : preview || !infinity ? 52 : 39)
+            .background(embedded ? Color.clear : WebStyle.surface)
             .overlay(alignment: atBottom ? .top : .bottom) {
-                WebStyle.border.frame(height: 1).allowsHitTesting(false)
+                if !embedded { WebStyle.border.frame(height: 1).allowsHitTesting(false) }
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier(showcase == nil ? "arenaStatusBar" : "showcaseStatusBar")
+    }
+    private var identity: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            if !title.isEmpty {
+                HStack(spacing: 6) {
+                    Circle().fill(WebStyle.accent).frame(width: 6, height: 6)
+                    Text(title.uppercased()).font(WebStyle.mono()).fixedSize(
+                        horizontal: false, vertical: true
+                    )
+                    .accessibilityIdentifier(showcase == nil ? "arenaTitle" : "showcaseTitle")
+                }
+            }
+            if let count = onlineCount {
+                Text("\(count) online").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
+            } else if !infinity && session.showFPS {
+                Text(performance).font(WebStyle.mono()).foregroundStyle(WebStyle.accent)
+            }
+        }.frame(maxWidth: embedded ? nil : .infinity, alignment: .leading)
+    }
+    private var infinityStatus: some View {
+        VStack(alignment: embedded ? .leading : .center, spacing: 2) {
+            if session.showFPS { Text(performance).foregroundStyle(WebStyle.accent) }
+            if session.spectating && !preview && showcase == nil {
+                Text(session.spectatorFollowingLabel).foregroundStyle(WebStyle.soft)
+                    .fixedSize(horizontal: false, vertical: true).frame(minHeight: 24)
+                    .accessibilityIdentifier("spectatorFollowing")
+            } else {
+                Text(
+                    "score: \(showcasePilot?.score ?? (preview ? 0 : session.score)), rank: #\(showcaseRank ?? (preview ? 0 : session.localTank?.rank ?? 0))"
+                ).foregroundStyle(WebStyle.paint(showcasePilot?.colorIndex ?? session.colorIndex))
+                    .accessibilityIdentifier("gameScore")
+            }
+        }.font(WebStyle.mono()).frame(maxWidth: embedded ? nil : .infinity)
+    }
+    private var finiteStatus: some View {
+        HStack(spacing: 6) {
+            HStack(spacing: 5) {
+                ForEach(scoreSides.prefix(8)) { entry in
+                    HStack(spacing: 2) {
+                        RoundedRectangle(cornerRadius: 1).fill(WebStyle.paint(entry.colorIndex)).frame(
+                            width: 5, height: 5)
+                        Text("\(entry.score)")
+                    }
+                }
+            }.accessibilityIdentifier("gameScore")
+            Text("ROUND \(String(format: "%02d", max(1, session.snapshot.round)))")
+            Text(clock).foregroundStyle(WebStyle.accent)
+        }.font(WebStyle.mono())
+    }
+    private var leaderboard: some View {
+        Button {
+            if showcase == nil { session.showScores.toggle() }
+        } label: {
+            if embedded && compact {
+                Image(systemName: "list.number").frame(width: 24, height: 30)
+            } else {
+                Text("LEADERBOARD")
+            }
+        }.buttonStyle(.plain).accessibilityLabel("Leaderboard")
+            .font(WebStyle.mono(10, weight: .semibold)).foregroundStyle(WebStyle.accent)
+            .padding(.horizontal, 7).frame(minHeight: 30)
+            .accessibilityIdentifier("toggleStandings")
+            .background(WebStyle.sunken, in: RoundedRectangle(cornerRadius: 4))
+            .overlay(
+                RoundedRectangle(cornerRadius: 4).stroke(WebStyle.border, lineWidth: 1)
+                    .allowsHitTesting(false))
     }
     private var title: String {
         if let showcase { return showcase.title }
