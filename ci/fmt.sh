@@ -30,7 +30,7 @@ printf '%s\0' \
 	shfmt 'shfmt -s -w .' \
 	perltidy 'git ls-files --cached --others --exclude-standard -z -- "*.pl" "*.pm" "*.t" |
 		perl -0ne "chomp; print qq{./\$_\0} if -f" |
-		xargs -0 -r perltidy -npro -l=110 -conv -b -bext=/' \
+		xargs -0 -r -P 4 -n 16 perltidy -npro -l=110 -conv -b -bext=/' \
 	swift-format 'find ios ci \( -name .build -o -name .swiftpm -o -name DerivedData \) -prune -o -type f -name "*.swift" -exec swift-format format --in-place {} +' \
 	ktfmt 'find android \( -name build -o -name .gradle -o -name .kotlin \) -prune -o -type f \( -name "*.kt" -o -name "*.kts" \) -exec ktfmt --quiet --kotlinlang-style {} +' \
 	gofmt 'gofmt -s -w .' |
