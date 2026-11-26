@@ -83,27 +83,45 @@ final class AudioRenderBusTests: XCTestCase {
 
     func testGameplayCommandsCanProgressWhileAnAudioBufferIsStillMixing() {
         let bus = AudioRenderBus()
-        let done = DispatchSemaphore(value: 0)
-        let worker = DispatchQueue(label: "leqra.audio-render-bus-regression")
-        worker.async {
-            var output = [Float](repeating: 0, count: 256_000)
-            output.withUnsafeMutableBufferPointer { bus.render(into: $0.baseAddress!, count: $0.count) }
-            done.signal()
+        let mixingStarted = DispatchSemaphore(value: 0)
+        let releaseMixing = DispatchSemaphore(value: 0)
+        let commandsFinished = DispatchSemaphore(value: 0)
+        let workers = DispatchGroup()
+        defer {
+            releaseMixing.signal()
+            let finished = workers.wait(timeout: .now() + 10)
+            XCTAssertEqual(finished, .success, "Both audio regression test workers must finish")
+            if finished == .success {
+                XCTAssertTrue(render(bus, 1024).allSatisfy(\.isFinite))
+            }
         }
-        let deadline = Date().addingTimeInterval(5)
-        while bus.startedRenderBlocks == 0 && Date() < deadline { Thread.sleep(forTimeInterval: 0.001) }
-        XCTAssertGreaterThan(bus.startedRenderBlocks, 0)
-        bus.enqueue([0.001, 0.002])
-        bus.setStarman(true)
-        bus.setVolume(0.7)
-        bus.fadeLoopAndClearEffects()
-        bus.clear()
-        bus.enqueue([0.001, 0.002])
-        // This checks concurrent progress rather than imposing a machine-
-        // dependent millisecond threshold on the test runner.
+        workers.enter()
+        DispatchQueue(label: "leqra.audio-render-bus-regression").async {
+            defer { workers.leave() }
+            var output = [Float](repeating: 0, count: 32)
+            output.withUnsafeMutableBufferPointer {
+                bus.render(into: $0.baseAddress!, count: $0.count) {
+                    mixingStarted.signal()
+                    releaseMixing.wait()
+                }
+            }
+        }
+        let started = mixingStarted.wait(timeout: .now() + 10)
+        XCTAssertEqual(started, .success, "The audio regression test must reach its mixing gate")
+        guard started == .success else { return }
+        workers.enter()
+        DispatchQueue(label: "leqra.audio-command-regression").async {
+            defer { workers.leave() }
+            bus.enqueue([0.001, 0.002])
+            bus.setStarman(true)
+            bus.setVolume(0.7)
+            bus.fadeLoopAndClearEffects()
+            bus.clear()
+            bus.enqueue([0.001, 0.002])
+            commandsFinished.signal()
+        }
         XCTAssertEqual(
-            done.wait(timeout: .now()), .timedOut, "Commands must not wait for the entire DSP buffer")
-        XCTAssertEqual(done.wait(timeout: .now() + 10), .success)
-        XCTAssertTrue(render(bus, 1024).allSatisfy(\.isFinite))
+            commandsFinished.wait(timeout: .now() + 10), .success,
+            "Gameplay commands must finish before the audio mixing gate is released")
     }
 }

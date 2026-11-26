@@ -19,12 +19,6 @@ public final class AudioRenderBus: @unchecked Sendable {
     private var pendingClear = false
     private var pendingFade = false
     private var loopMaySound = false
-    private var renderBlocks = 0
-    var startedRenderBlocks: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return renderBlocks
-    }
 
     public init(sampleRate: Double = 48_000) {
         processor = AudioMixProcessor(sampleRate: sampleRate)
@@ -124,14 +118,18 @@ public final class AudioRenderBus: @unchecked Sendable {
             pendingSamples[index] = nil
         }
         pendingCount = 0
-        renderBlocks += 1
     }
 
     /// Only the audio engine's single render callback may call this method.
     /// Storage and cue samples are allocated before callback execution.
     public func render(into output: UnsafeMutablePointer<Float>, count: Int) {
+        render(into: output, count: count, beforeMixing: {})
+    }
+
+    func render(into output: UnsafeMutablePointer<Float>, count: Int, beforeMixing: () -> Void) {
         guard count > 0 else { return }
         applyCommands()
+        beforeMixing()
         // The expensive per-sample work deliberately owns no UI/control lock.
         for frame in 0..<count {
             var mixed = starman.nextSample()
