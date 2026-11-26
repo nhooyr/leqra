@@ -6,76 +6,11 @@ use LeqraTest;
 use Test::More;
 use File::Glob qw(bsd_glob);
 
-my $parallel = root() . '/ci/parallel.pl';
-
-subtest 'parallel output retains labels and failures' => sub {
-    my $result = run_cmd(
-        [
-            $^X, $parallel,
-            first  => q{printf 'stdout\n'; printf 'stderr\n' >&2; exit 17},
-            second => q{printf 'last line'}
-        ]
-    );
-    isnt( $result->{code}, 0, 'a failed formatter makes the runner fail' );
-    is( $result->{err}, '', 'all formatter output goes to stdout' );
-    is_deeply(
-        [ sort split /\n/, $result->{out} ],
-        [ sort '[first] stdout', '[first] stderr', '[second] last line' ],
-        'stdout, stderr, and an unfinished final line all receive their label'
-    );
-};
-
-for my $flag (qw(-h --help)) {
-    my $result = run_cmd( [ $^X, $parallel, $flag ] );
-    is( $result->{code}, 0, "$flag succeeds" );
-    like( $result->{out}, qr/usage:/i, "$flag prints usage" );
-}
-
-subtest 'interruption reaches formatter descendants' => sub {
-    my $tmp    = scratch();
-    my $worker = write_text(
-        "$tmp/worker.pl",
-        <<'WORKER'
-use strict;
-use warnings;
-use Time::HiRes qw(sleep);
-my $directory = $ENV{FMT_SIGNAL_DIR};
-my $supervisor = getppid();
-sub mark {
-    open my $file, '>', "$directory/$_[0]" or die $!;
-    close $file or die $!;
-}
-$SIG{INT} = $SIG{TERM} = sub { mark("stopped-$$"); exit 0; };
-$SIG{ALRM} = sub { exit 0; };
-alarm 5;
-my $child = fork();
-defined $child or die $!;
-if (!$child) {
-    alarm 5;
-    mark('ready');
-    sleep 10;
-    exit 0;
-}
-sleep 0.01 until -e "$directory/ready";
-mark("parent-$$");
-mark("child-$child");
-kill 'INT', $supervisor or die $!;
-waitpid $child, 0;
-WORKER
-    );
-    my $result = run_cmd( [ $^X, $parallel, stopped => qq{exec "$^X" "$worker"} ],
-        env => { %ENV, FMT_SIGNAL_DIR => $tmp } );
-    is( $result->{code}, 130, 'interrupted runner returns 130' );
-    my @pids = map { /-(\d+)\z/; $1 } ( bsd_glob("$tmp/parent-*"), bsd_glob("$tmp/child-*") );
-    is( scalar @pids, 2, 'formatter and its descendant started' );
-    ok( -e "$tmp/stopped-$_", "interrupt reached process $_" ) for @pids;
-};
-
-subtest 'formatters start together with batched Perl inputs' => sub {
+sub fixture {
+    my ($mode)  = @_;
     my $tmp     = scratch();
     my $project = "$tmp/project with spaces";
     copy_file( root() . '/ci/fmt.sh', "$project/ci/fmt.sh" );
-    copy_file( $parallel,             "$project/ci/parallel.pl" );
     write_text( "$project/$_", '' )
       for (
         'one.pl',     'two.pm',            'three.t', 'space name.pl',
@@ -83,8 +18,8 @@ subtest 'formatters start together with batched Perl inputs' => sub {
       );
     write_text( "$project/.gitignore", "ignored.pl\n" );
     write_text( "$project/ignored.pl", '' );
-    is( run_cmd( [ 'git', 'init', '-q', $project ] )->{code}, 0, 'initialize fixture' );
-    is( run_cmd( [ 'git', '-C', $project, 'add', '.' ] )->{code}, 0, 'track fixture inputs' );
+    die 'git init failed' if run_cmd( [ 'git', 'init', '-q', $project ] )->{code};
+    die 'git add failed' if run_cmd( [ 'git', '-C', $project, 'add', '.' ] )->{code};
     unlink "$project/missing.pl" or die $!;
     my $stub = <<'STUB';
 use strict;
@@ -95,52 +30,130 @@ use Fcntl qw(:flock);
 use JSON::PP;
 use Time::HiRes qw(sleep);
 my $name = basename($0);
-open my $log, '>>', "$ENV{FMT_STUB_DIR}/events" or die $!;
+my $directory = $ENV{FMT_STUB_DIR};
+sub mark {
+    open my $file, '>', "$directory/$_[0]" or die $!;
+    close $file or die $!;
+}
+$SIG{ALRM} = sub { die "formatter fixture timed out\n"; };
+alarm 8;
+$SIG{INT} = 'IGNORE';
+$SIG{TERM} = sub { mark("stopped-$$"); exit 0; };
+mark("live-$$");
+open my $log, '>>', "$directory/events" or die $!;
 flock $log, LOCK_EX or die $!;
 print {$log} encode_json({name => $name, args => \@ARGV}), "\n";
 close $log or die $!;
-open my $ready, '>', "$ENV{FMT_STUB_DIR}/$name.ready" or die $!;
-close $ready or die $!;
-$SIG{ALRM} = sub { print STDERR "formatters did not start concurrently\n"; exit 91; };
-alarm 5;
+if ($ENV{FMT_MODE} eq 'interrupt' && $name eq 'npx') {
+    my $child = fork // die $!;
+    if (!$child) {
+        alarm 8;
+        mark("live-$$");
+        mark('child-ready');
+        sleep 10;
+        exit 0;
+    }
+}
+mark("$name.ready");
 while (1) {
-    my @ready = bsd_glob("$ENV{FMT_STUB_DIR}/*.ready");
+    my @ready = bsd_glob("$directory/*.ready");
     last if @ready == 6;
     sleep 0.01;
 }
-alarm 0;
+sleep 10 if $ENV{FMT_MODE} eq 'interrupt';
+$| = 1;
 print "stdout\n";
 print STDERR "stderr\n";
+mark("$name.done");
+exit($ENV{FMT_MODE} eq 'failure' && $name eq 'shfmt' ? 17 : 0);
 STUB
     my $commands = "$tmp/commands";
     write_text( "$commands/$_", "#!$^X\n$stub", 0755 )
       for qw(npx shfmt perltidy swift-format ktfmt gofmt);
-    my %env = ( %ENV, PATH => "$commands:$ENV{PATH}", FMT_STUB_DIR => $commands );
+    my %env = (
+        %ENV,
+        PATH           => "$commands:$ENV{PATH}",
+        FMT_STUB_DIR   => $commands,
+        FMT_MODE       => $mode,
+        PARALLEL_SHELL => '/bin/false'
+    );
     delete @env{qw(CI GITHUB_ACTIONS)};
-    my $result = run_cmd( [ '/bin/sh', "$project/ci/fmt.sh" ], cwd => $tmp, env => \%env );
-    is( $result->{code}, 0,  'all six formatter jobs complete concurrently' );
-    is( $result->{err},  '', 'formatter stderr is merged into labeled stdout' );
-    my $events = json_lines("$commands/events");
-    is_deeply(
-        [ sort map { $_->{name} } @$events ],
-        [ sort qw(npx shfmt perltidy swift-format ktfmt gofmt) ],
-        'one invocation per formatter'
-    );
-    my ($perl) = grep { $_->{name} eq 'perltidy' } @$events;
-    is_deeply(
-        [ @{ $perl->{args} }[ 0 .. 4 ] ],
-        [qw(-npro -l=110 -conv -b -bext=/)],
-        'Perl formatting options are unchanged'
-    );
-    is_deeply(
-        [ sort @{ $perl->{args} }[ 5 .. $#{ $perl->{args} } ] ],
-        [ sort './ci/parallel.pl', './one.pl', './two.pm', './three.t', './space name.pl' ],
-        'one batch includes tracked Perl files and skips missing or ignored files'
-    );
+    return ( $tmp, $project, $commands, \%env );
+}
 
-    for my $name (qw(prettier shfmt perltidy swift-format ktfmt gofmt)) {
-        like( $result->{out}, qr/^\[\Q$name\E\] stdout$/m, "$name stdout is labeled" );
-        like( $result->{out}, qr/^\[\Q$name\E\] stderr$/m, "$name stderr is labeled" );
+for my $mode ( 'success', 'failure' ) {
+    subtest "formatter integration: $mode" => sub {
+        my ( $tmp, $project, $commands, $env ) = fixture($mode);
+        my $result = run_cmd( [ '/bin/sh', "$project/ci/fmt.sh" ], cwd => $tmp, env => $env );
+        if ( $mode eq 'success' ) {
+            is( $result->{code}, 0, 'all formatters succeed' )
+              or diag( $result->{out}, $result->{err} );
+        }
+        else {
+            isnt( $result->{code}, 0, 'a formatter failure is reported' );
+        }
+        is( $result->{err}, '', 'formatter stderr is merged into stdout' );
+        my $events = json_lines("$commands/events");
+        is_deeply(
+            [ sort map { $_->{name} } @$events ],
+            [ sort qw(npx shfmt perltidy swift-format ktfmt gofmt) ],
+            'all six jobs start together'
+        );
+        for my $name (qw(npx shfmt perltidy swift-format ktfmt gofmt)) {
+            ok( -e "$commands/$name.done", "$name finishes before the script returns" );
+            my $label = $name eq 'npx' ? 'prettier' : $name;
+            like( $result->{out}, qr/^\[\Q$label\E\]\tstdout$/m, "$label stdout is labeled" );
+            like( $result->{out}, qr/^\[\Q$label\E\]\tstderr$/m, "$label stderr is labeled" );
+        }
+        if ( $mode eq 'success' ) {
+            my ($perl) = grep { $_->{name} eq 'perltidy' } @$events;
+            is_deeply(
+                [ @{ $perl->{args} }[ 0 .. 4 ] ],
+                [qw(-npro -l=110 -conv -b -bext=/)],
+                'Perl formatting options are unchanged'
+            );
+            is_deeply(
+                [ sort @{ $perl->{args} }[ 5 .. $#{ $perl->{args} } ] ],
+                [ sort './one.pl', './two.pm', './three.t', './space name.pl' ],
+                'one batch includes Perl files and skips missing or ignored inputs'
+            );
+        }
+    };
+}
+
+subtest 'Ctrl+C stops formatter descendants' => sub {
+    my ( $tmp, $project, $commands, $env ) = fixture('interrupt');
+    my $driver = write_text( "$tmp/interrupt.pl", <<'DRIVER' );
+use strict;
+use warnings;
+use POSIX qw(setpgid);
+use File::Glob qw(bsd_glob);
+use Time::HiRes qw(sleep);
+my $pid = fork // die $!;
+if (!$pid) {
+    setpgid(0, 0) == 0 or die $!;
+    exec '/bin/sh', $ARGV[0];
+    die $!;
+}
+setpgid($pid, $pid);
+$SIG{ALRM} = sub { kill 'KILL', -$pid; die "interrupt fixture timed out\n"; };
+alarm 10;
+while (1) {
+    my @ready = bsd_glob("$ENV{FMT_STUB_DIR}/*.ready");
+    last if @ready == 6 && -f "$ENV{FMT_STUB_DIR}/child-ready";
+    sleep 0.01;
+}
+kill 'INT', -$pid or die $!;
+waitpid $pid, 0;
+exit(($? & 127) ? 128 + ($? & 127) : $? >> 8);
+DRIVER
+    my $result = run_cmd( [ $^X, $driver, "$project/ci/fmt.sh" ], cwd => $tmp, env => $env );
+    isnt( $result->{code}, 0, 'interruption returns a nonzero status' );
+    my @live = bsd_glob("$commands/live-*");
+    is( scalar @live, 7, 'all formatters and one descendant started' );
+    for my $file (@live) {
+        my ($pid) = $file =~ /live-(\d+)$/;
+        ok( -e "$commands/stopped-$pid", "process $pid receives termination" );
     }
 };
 

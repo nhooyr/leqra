@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 npm ci --ignore-scripts
 
 if [ "${GITHUB_ACTIONS-}" ]; then
-	brew install cpanminus
+	brew install parallel cpanminus
 fi
 
 perl_lib="$PWD/.build/perl-$(perl -e 'print $^V')"

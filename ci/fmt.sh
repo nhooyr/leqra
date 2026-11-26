@@ -15,7 +15,7 @@ case "${1-}" in
 esac
 
 if [ "${GITHUB_ACTIONS-}" ]; then
-	brew install shfmt swift-format ktfmt cpanminus
+	brew install parallel shfmt swift-format ktfmt cpanminus
 	npm ci --ignore-scripts
 
 	perl_lib="$PWD/.build/perltidy-20260826-$(perl -e 'print $^V')"
@@ -25,7 +25,7 @@ if [ "${GITHUB_ACTIONS-}" ]; then
 	perl "$(command -v cpanm)" --notest --local-lib-contained "$perl_lib" 'Perl::Tidy@20260826'
 fi
 
-perl ci/parallel.pl \
+printf '%s\0' \
 	prettier 'npx prettier --log-level warn -w --print-width=110 --no-semi --bracket-same-line .' \
 	shfmt 'shfmt -s -w .' \
 	perltidy 'git ls-files --cached --others --exclude-standard -z -- "*.pl" "*.pm" "*.t" |
@@ -33,7 +33,8 @@ perl ci/parallel.pl \
 		xargs -0 -r perltidy -npro -l=110 -conv -b -bext=/' \
 	swift-format 'find ios ci \( -name .build -o -name .swiftpm -o -name DerivedData \) -prune -o -type f -name "*.swift" -exec swift-format format --in-place {} +' \
 	ktfmt 'find android \( -name build -o -name .gradle -o -name .kotlin \) -prune -o -type f \( -name "*.kt" -o -name "*.kts" \) -exec ktfmt --quiet --kotlinlang-style {} +' \
-	gofmt 'gofmt -s -w .'
+	gofmt 'gofmt -s -w .' |
+	PARALLEL_SHELL=/bin/sh parallel --plain --null -N 2 --jobs 6 --line-buffer --tagstring '[{1}]' --halt never 'sh -ec {2} 2>&1'
 
 if [ "${CI-}" ]; then
 	git add --intent-to-add --ignore-removal .
